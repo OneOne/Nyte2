@@ -4,6 +4,7 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <vector>
 
 // class forward decl
 struct GLFWwindow;
@@ -22,9 +23,17 @@ private:
 
     void createInstance();
 
-    void mainLoop();
+    std::vector<const char*> getRequiredExtensions();
+
+#if _DEBUG
+    bool checkValidationLayerSupport();
+    void fillDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& _createInfo);
+    void setupDebugMessenger();
+#endif
 
     void cleanup();
+
+    void mainLoop();
 
 private:
     GLFWwindow* m_window = nullptr;
@@ -32,4 +41,8 @@ private:
     static constexpr u32 m_WindowHeight = 720;
 
     VkInstance m_instance;
+
+#if _DEBUG
+    VkDebugUtilsMessengerEXT m_callback;
+#endif
 };
