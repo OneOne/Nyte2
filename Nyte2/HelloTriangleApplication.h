@@ -18,11 +18,12 @@ class HelloTriangleApplication
 private:
     struct QueueFamilyIndices {
         std::optional<u32> graphicsFamily;
+        std::optional<u32> presentFamily;
         std::optional<u32> computeFamily;
         std::optional<u32> transfertFamily;
 
-        bool hasGraphics() {
-            return graphicsFamily.has_value();
+        bool isComplete() {
+            return graphicsFamily.has_value() && presentFamily.has_value();
         }
     };
 
@@ -51,6 +52,8 @@ private:
 #pragma endregion Instance Creation
 
     void createLogicalDevice();
+    void createWindowSurface();
+
 
     void cleanup();
 
@@ -62,9 +65,12 @@ private:
     static constexpr u32 m_WindowHeight = 720;
 
     VkInstance m_instance;
+    VkSurfaceKHR m_windowSurface;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     VkDevice m_logicalDevice;
     VkQueue m_graphicsQueue;
+    VkQueue m_presentQueue;
+
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
