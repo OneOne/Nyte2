@@ -1,0 +1,9 @@
+﻿  HelloTriangleApplication.cpp
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(208,46): error C2143: syntax error: missing ';' before 'HelloTriangleApplication::findQueueFamilies'
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(208,63): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(209,1): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(209,1): error C2556: 'int HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice)': overloaded function differs only by return type from 'HelloTriangleApplication::QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice)'
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.h(33,24): message : see declaration of 'HelloTriangleApplication::findQueueFamilies'
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(208,46): error C2371: 'HelloTriangleApplication::findQueueFamilies': redefinition; different basic types
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.h(33,24): message : see declaration of 'HelloTriangleApplication::findQueueFamilies'
+  main.cpp

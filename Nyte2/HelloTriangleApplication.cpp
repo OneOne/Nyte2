@@ -92,6 +92,7 @@ void HelloTriangleApplication::initVulkan()
 #if _DEBUG
     setupDebugMessenger();
 #endif
+    pickPhysicalDevice();
 }
 
 void HelloTriangleApplication::createInstance()
@@ -162,6 +163,73 @@ void HelloTriangleApplication::createInstance()
 
     VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance);
     VCR(result, "Failed to create instance.");
+}
+
+void HelloTriangleApplication::pickPhysicalDevice()
+{
+    // Retrieve physical devices supporting Vulkan count
+    u32 deviceCount = 0;
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+    if (deviceCount == 0) 
+        throw std::runtime_error("No GPU (physical device) supporting Vulkan found.");
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+
+    for (const VkPhysicalDevice& device : devices) 
+    {
+        if (isPhysicalDeviceSuitable(device)) {
+            m_physicalDevice = device;
+            break;
+        }
+    }
+
+    if (m_physicalDevice == VK_NULL_HANDLE)
+        throw std::runtime_error("No GPU (physical device) found suitable.");
+
+}
+
+bool HelloTriangleApplication::isPhysicalDeviceSuitable(VkPhysicalDevice _device)
+{
+    //VkPhysicalDeviceProperties deviceProperties;
+    //vkGetPhysicalDeviceProperties(_device, &deviceProperties);
+    //
+    //VkPhysicalDeviceFeatures deviceFeatures;
+    //vkGetPhysicalDeviceFeatures(_device, &deviceFeatures);
+    //
+    //bool isSuitable = deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+    //isSuitable &= deviceFeatures.geometryShader; // support geometry shader
+    //
+    //return isSuitable;
+
+    QueueFamilyIndices indices = findQueueFamilies(_device);
+
+    return indices.hasGraphics();
+}
+
+HelloTriangleApplication::QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice _device) 
+{
+    QueueFamilyIndices queueIndices;
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(_device, &queueFamilyCount, nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(_device, &queueFamilyCount, queueFamilies.data());
+
+    for (int i=0; i<queueFamilies.size(); ++i) 
+    {
+        const VkQueueFamilyProperties& queueFamily = queueFamilies[i];
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) 
+        {
+            queueIndices.graphicsFamily = i;
+        }
+
+        if(queueIndices.hasGraphics())
+            break;
+    }
+
+    return queueIndices;
 }
 
 std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() 
