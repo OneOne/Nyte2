@@ -33,6 +33,8 @@ private:
     void initWindow();
     void initVulkan();
 
+#pragma region Instance Creation
+
     void createInstance();
     void pickPhysicalDevice();
     bool isPhysicalDeviceSuitable(VkPhysicalDevice _device);
@@ -46,6 +48,10 @@ private:
     void setupDebugMessenger();
 #endif
 
+#pragma endregion Instance Creation
+
+    void createLogicalDevice();
+
     void cleanup();
 
     void mainLoop();
@@ -57,6 +63,8 @@ private:
 
     VkInstance m_instance;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+    VkDevice m_logicalDevice;
+    VkQueue m_graphicsQueue;
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
