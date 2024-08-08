@@ -546,12 +546,45 @@ void HelloTriangleApplication::createSwapchain()
     vkGetSwapchainImagesKHR(m_logicalDevice, m_swapchain, &swapchainImagesCount, m_swapchainImages.data());
 
 }
+void HelloTriangleApplication::createImageViews()
+{
+    m_swapchainImageViews.resize(m_swapchainImages.size());
+
+    for (u32 i = 0; i < m_swapchainImages.size(); i++)
+    {
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image = m_swapchainImages[i];
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format = m_swapchainImageFormat;
+
+        // Allows to alterate the color channels view
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+        // Subrange allows to specify a subregion of the image to view
+        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
+
+        VCR(vkCreateImageView(m_logicalDevice, &createInfo, nullptr, &m_swapchainImageViews[i]), "Failed to create image view.");
+    }
+}
 #pragma endregion Swapchain
 
 
 
 void HelloTriangleApplication::cleanup() 
 {
+    for (VkImageView& imageView : m_swapchainImageViews)
+    {
+        vkDestroyImageView(m_logicalDevice, imageView, nullptr);
+    }
+
     vkDestroySwapchainKHR(m_logicalDevice, m_swapchain, nullptr);
     vkDestroyDevice(m_logicalDevice, nullptr);
 

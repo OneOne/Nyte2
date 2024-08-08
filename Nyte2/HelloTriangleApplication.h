@@ -61,12 +61,15 @@ private:
 #pragma endregion Instance & PhysicalDevice
 
     void createLogicalDevice();
+
+#pragma region Swapchain
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& _availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& _availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& _capabilities);
-
-
     void createSwapchain();
+    void createImageViews();
+#pragma endregion Swapchain
+
     void cleanup();
 
     void mainLoop();
@@ -84,6 +87,7 @@ private:
     VkQueue m_presentQueue;
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchainImages;
+    std::vector<VkImageView> m_swapchainImageViews;
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
 
