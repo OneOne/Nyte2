@@ -5,6 +5,8 @@
 #include <functional>
 #include <cstdlib>
 #include <set>
+#include <limits>
+#include <algorithm>
 
 using namespace std;
 
@@ -13,8 +15,12 @@ using namespace std;
 
 #if _DEBUG
 // Check "Config/vk_layer_settings.txt" in VulkanSDK to get more information on how to configure validation layer.
-const std::vector<const char*> validationLayers = {
+const vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
+};
+
+const vector<const char*> deviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 // Create and Destroy messenger for validation layer callback
@@ -98,9 +104,12 @@ void HelloTriangleApplication::initVulkan()
     createWindowSurface();
     pickPhysicalDevice();
     createLogicalDevice();
+    createSwapchain();
 }
 
-#pragma region Instance Creation
+
+
+#pragma region Instance & PhysicalDevice
 
 void HelloTriangleApplication::createInstance()
 {
@@ -172,6 +181,18 @@ void HelloTriangleApplication::createInstance()
     VCR(result, "Failed to create instance.");
 }
 
+void HelloTriangleApplication::createWindowSurface()
+{
+    //VkWin32SurfaceCreateInfoKHR createInfo{};
+    //createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    //createInfo.hwnd = glfwGetWin32Window(window);
+    //createInfo.hinstance = GetModuleHandle(nullptr);
+
+    //VCR(vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface), "Failed to create the window surface.");
+
+    VCR(glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_windowSurface), "Failed to create the window surface.");
+}
+
 void HelloTriangleApplication::pickPhysicalDevice()
 {
     // Retrieve physical devices supporting Vulkan count
@@ -209,9 +230,66 @@ bool HelloTriangleApplication::isPhysicalDeviceSuitable(VkPhysicalDevice _device
     //
     //return isSuitable;
 
-    QueueFamilyIndices indices = findQueueFamilies(_device);
+    bool isSuitable = true;
 
-    return indices.isComplete();
+    QueueFamilyIndices indices = findQueueFamilies(_device);
+    isSuitable &= indices.isComplete();
+
+    bool physicalDeviceExtensionsSupported = checkDeviceExtensionSupport(_device);
+    isSuitable &= physicalDeviceExtensionsSupported;
+
+    bool swapchainAdequate = false;
+    if (physicalDeviceExtensionsSupported) {
+        SwapchainSupportDetails swapchainSupport = retrieveSwapchainSupportDetails(_device);
+        swapchainAdequate = !swapchainSupport.formats.empty() && !swapchainSupport.presentModes.empty();
+    }
+    isSuitable &= swapchainAdequate;
+
+    return isSuitable;
+}
+bool HelloTriangleApplication::checkDeviceExtensionSupport(VkPhysicalDevice _device)
+{
+    u32 extensionsCount;
+    vkEnumerateDeviceExtensionProperties(_device, nullptr, &extensionsCount, nullptr);
+
+    vector<VkExtensionProperties> extensions(extensionsCount);
+    vkEnumerateDeviceExtensionProperties(_device, nullptr, &extensionsCount, extensions.data());
+
+    for (const char* deviceExtension : deviceExtensions)
+    {
+        auto it = find_if(extensions.begin(), extensions.end(), [&](const VkExtensionProperties& _extProperties) -> bool {
+            return strcmp(_extProperties.extensionName, deviceExtension) == 0;
+        });
+        if (it == extensions.end())
+            return false;
+    }
+    return true;
+}
+HelloTriangleApplication::SwapchainSupportDetails HelloTriangleApplication::retrieveSwapchainSupportDetails(VkPhysicalDevice _device) 
+{
+    SwapchainSupportDetails details;
+
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_device, m_windowSurface, &details.capabilities);
+
+    u32 formatCount;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(_device, m_windowSurface, &formatCount, nullptr);
+
+    if (formatCount > 0) 
+    {
+        details.formats.resize(formatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(_device, m_windowSurface, &formatCount, details.formats.data());
+    }
+
+    u32 presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(_device, m_windowSurface, &presentModeCount, nullptr);
+
+    if (presentModeCount > 0) 
+    {
+        details.presentModes.resize(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(_device, m_windowSurface, &presentModeCount, details.presentModes.data());
+    }
+
+    return details;
 }
 
 HelloTriangleApplication::QueueFamilyIndices HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice _device) 
@@ -244,7 +322,7 @@ HelloTriangleApplication::QueueFamilyIndices HelloTriangleApplication::findQueue
     return queueIndices;
 }
 
-std::vector<const char*> HelloTriangleApplication::getRequiredExtensions() 
+vector<const char*> HelloTriangleApplication::getRequiredExtensions() 
 {
     uint32_t glfwExtensionCount = 0;
     const char** glfwExtensions;
@@ -303,16 +381,16 @@ void HelloTriangleApplication::setupDebugMessenger()
 }
 #endif
 
-#pragma endregion Instance Creation
+#pragma endregion Instance & PhysicalDevice
 
 void HelloTriangleApplication::createLogicalDevice()
 {
     QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
 
     // note: queue family must be unique, cannot create twice a queue for a same index.
-    set<u32> uniqueQueueFamilies = { 
-        indices.graphicsFamily.value(), 
-        indices.presentFamily.value() 
+    set<u32> uniqueQueueFamilies = {
+        indices.graphicsFamily.value(),
+        indices.presentFamily.value()
     };
 
     vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -335,7 +413,9 @@ void HelloTriangleApplication::createLogicalDevice()
     VkPhysicalDeviceFeatures deviceFeatures{};
     createInfo.pEnabledFeatures = &deviceFeatures;
 
-    createInfo.enabledExtensionCount = 0;
+    createInfo.enabledExtensionCount = (u32)deviceExtensions.size();
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    
 
 #if _DEBUG
     createInfo.enabledLayerCount = (u32)validationLayers.size();
@@ -350,21 +430,129 @@ void HelloTriangleApplication::createLogicalDevice()
     vkGetDeviceQueue(m_logicalDevice, indices.presentFamily.value(), 0, &m_presentQueue);
 }
 
-void HelloTriangleApplication::createWindowSurface()
+
+#pragma region Swapchain
+VkSurfaceFormatKHR HelloTriangleApplication::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& _availableFormats) 
 {
-    //VkWin32SurfaceCreateInfoKHR createInfo{};
-    //createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    //createInfo.hwnd = glfwGetWin32Window(window);
-    //createInfo.hinstance = GetModuleHandle(nullptr);
+    for (const VkSurfaceFormatKHR& availableFormat : _availableFormats) 
+    {
+        if (availableFormat.format == VK_FORMAT_R8G8B8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            return availableFormat;
 
-    //VCR(vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface), "Failed to create the window surface.");
+        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            return availableFormat;
+    }
 
-    VCR(glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_windowSurface), "Failed to create the window surface.");
+    // By default return first format
+    return _availableFormats.front();
 }
+VkPresentModeKHR HelloTriangleApplication::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& _availablePresentModes) 
+{
+    // VK_PRESENT_MODE_IMMEDIATE_KHR: 
+    //      Images submitted by your application are transferred to the screen right away, which may result in tearing.
+    // 
+    // VK_PRESENT_MODE_FIFO_KHR : 
+    //      The swap chain is a queue where the display takes an image from the front of the queue when the display is 
+    //      refreshed and the program inserts rendered images at the back of the queue.If the queue is full then the program 
+    //      has to wait.This is most similar to vertical sync as found in modern games.The moment that the display is 
+    //      refreshed is known as "vertical blank".
+    // 
+    // VK_PRESENT_MODE_FIFO_RELAXED_KHR : 
+    //      This mode only differs from the previous one if the application is late and the queue was empty at the last 
+    //      vertical blank.Instead of waiting for the next vertical blank, the image is transferred right away when it 
+    //      finally arrives.This may result in visible tearing.
+    // 
+    // VK_PRESENT_MODE_MAILBOX_KHR : 
+    //      This is another variation of the second mode.Instead of blocking the application when the queue is full, the 
+    //      images that are already queued are simply replaced with the newer ones.This mode can be used to render frames as 
+    //      fast as possible while still avoiding tearing, resulting in fewer latency issues than standard vertical sync.
+    //      This is commonly known as "triple buffering", although the existence of three buffers alone does not necessarily
+    //      mean that the framerate is unlocked.
+
+    for (const VkPresentModeKHR& availablePresentMode : _availablePresentModes) 
+    {
+        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+            return availablePresentMode;
+    }
+
+    // By default return FIFO mode as it is always available
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+VkExtent2D HelloTriangleApplication::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& _capabilities) 
+{
+    if (_capabilities.currentExtent.width != numeric_limits<u32>::max()) 
+        return _capabilities.currentExtent;
+
+
+    VkExtent2D actualExtent = { m_WindowWidth, m_WindowHeight };
+
+    actualExtent.width = clamp(actualExtent.width, _capabilities.minImageExtent.width, _capabilities.maxImageExtent.width);
+    actualExtent.height = clamp(actualExtent.height, _capabilities.minImageExtent.height, _capabilities.maxImageExtent.height);
+
+    return actualExtent;
+}
+void HelloTriangleApplication::createSwapchain() 
+{
+    SwapchainSupportDetails swapchainSupport = retrieveSwapchainSupportDetails(m_physicalDevice);
+
+    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapchainSupport.formats);
+    m_swapchainImageFormat = surfaceFormat.format;
+    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapchainSupport.presentModes);
+    m_swapchainExtent = chooseSwapExtent(swapchainSupport.capabilities);
+
+    u32 imageCount = swapchainSupport.capabilities.minImageCount + 1;
+    if (swapchainSupport.capabilities.maxImageCount > 0) // a limit exist (nolimit = (u32)-1)
+    {
+        if(imageCount > swapchainSupport.capabilities.maxImageCount) // the limit is exceeded with minImageCount+1, then clamp it to maxImageCount
+            imageCount = swapchainSupport.capabilities.maxImageCount;
+    }
+
+
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = m_windowSurface;
+    createInfo.minImageCount = imageCount;
+    createInfo.imageFormat = m_swapchainImageFormat;
+    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+    createInfo.imageExtent = m_swapchainExtent;
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // images in swapchain are use directly as color, use TRANSFERT_DST to use other images to be transfered into swap chain
+
+    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+    u32 queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+
+    if (indices.graphicsFamily != indices.presentFamily) {
+        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT; // images can be shared by sevral queues
+        createInfo.queueFamilyIndexCount = 2;
+        createInfo.pQueueFamilyIndices = queueFamilyIndices;
+    }
+    else {
+        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // images are exclusive to the present/graphics queue which offers maximum performance
+        createInfo.queueFamilyIndexCount = 0; // Optional
+        createInfo.pQueueFamilyIndices = nullptr; // Optional
+    }
+
+    createInfo.preTransform = swapchainSupport.capabilities.currentTransform; // allows to apply transform on images provided to the swapchain (current transform = no transform)
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // allows to composite window with other windows depending on the alpha value
+    createInfo.presentMode = presentMode;
+    createInfo.clipped = VK_TRUE; // allows to clip pixels hidden by other windows
+    createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    VCR(vkCreateSwapchainKHR(m_logicalDevice, &createInfo, nullptr, &m_swapchain), "Failed to create the swapchain.");
+
+    u32 swapchainImagesCount;
+    vkGetSwapchainImagesKHR(m_logicalDevice, m_swapchain, &swapchainImagesCount, nullptr);
+    m_swapchainImages.resize(swapchainImagesCount);
+    vkGetSwapchainImagesKHR(m_logicalDevice, m_swapchain, &swapchainImagesCount, m_swapchainImages.data());
+
+}
+#pragma endregion Swapchain
+
 
 
 void HelloTriangleApplication::cleanup() 
 {
+    vkDestroySwapchainKHR(m_logicalDevice, m_swapchain, nullptr);
     vkDestroyDevice(m_logicalDevice, nullptr);
 
 #if _DEBUG

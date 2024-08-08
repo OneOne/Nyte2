@@ -27,6 +27,12 @@ private:
         }
     };
 
+    struct SwapchainSupportDetails {
+        VkSurfaceCapabilitiesKHR capabilities;
+        std::vector<VkSurfaceFormatKHR> formats;
+        std::vector<VkPresentModeKHR> presentModes;
+    };
+
 public:
     void run();
 
@@ -34,11 +40,14 @@ private:
     void initWindow();
     void initVulkan();
 
-#pragma region Instance Creation
+#pragma region Instance & PhysicalDevice
 
     void createInstance();
+    void createWindowSurface();
     void pickPhysicalDevice();
     bool isPhysicalDeviceSuitable(VkPhysicalDevice _device);
+    bool checkDeviceExtensionSupport(VkPhysicalDevice _device);
+    SwapchainSupportDetails retrieveSwapchainSupportDetails(VkPhysicalDevice _device);
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice _device);
 
     std::vector<const char*> getRequiredExtensions();
@@ -49,12 +58,15 @@ private:
     void setupDebugMessenger();
 #endif
 
-#pragma endregion Instance Creation
+#pragma endregion Instance & PhysicalDevice
 
     void createLogicalDevice();
-    void createWindowSurface();
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& _availableFormats);
+    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& _availablePresentModes);
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& _capabilities);
 
 
+    void createSwapchain();
     void cleanup();
 
     void mainLoop();
@@ -70,7 +82,10 @@ private:
     VkDevice m_logicalDevice;
     VkQueue m_graphicsQueue;
     VkQueue m_presentQueue;
-
+    VkSwapchainKHR m_swapchain;
+    std::vector<VkImage> m_swapchainImages;
+    VkFormat m_swapchainImageFormat;
+    VkExtent2D m_swapchainExtent;
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
