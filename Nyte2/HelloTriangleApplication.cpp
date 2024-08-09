@@ -109,6 +109,7 @@ void HelloTriangleApplication::initVulkan()
     createImageViews();
     createRenderPass();
     createGraphicsPipeline();
+    createFramebuffers();
 }
 
 
@@ -793,8 +794,34 @@ void HelloTriangleApplication::createGraphicsPipeline()
     vkDestroyShaderModule(m_logicalDevice, vertexShaderModule, nullptr);
 }
 
+void HelloTriangleApplication::createFramebuffers()
+{
+     m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
+
+     for (u32 i = 0; i < (u32)m_swapchainImageViews.size(); i++) 
+     {
+         VkImageView attachments[] = { m_swapchainImageViews[i] };
+
+         VkFramebufferCreateInfo framebufferInfo{};
+         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+         framebufferInfo.renderPass = m_renderPass;
+         framebufferInfo.attachmentCount = 1;
+         framebufferInfo.pAttachments = attachments;
+         framebufferInfo.width = m_swapchainExtent.width;
+         framebufferInfo.height = m_swapchainExtent.height;
+         framebufferInfo.layers = 1;
+
+         VCR(vkCreateFramebuffer(m_logicalDevice, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]), "Failed to create framebuffer.");
+     }
+}
+
 void HelloTriangleApplication::cleanup() 
 {
+    for (VkFramebuffer& framebuffer : m_swapchainFramebuffers) 
+    {
+        vkDestroyFramebuffer(m_logicalDevice, framebuffer, nullptr);
+    }
+
     vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
     vkDestroyRenderPass(m_logicalDevice, m_renderPass, nullptr);

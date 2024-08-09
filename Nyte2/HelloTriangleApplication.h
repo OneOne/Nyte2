@@ -74,6 +74,8 @@ private:
     VkShaderModule createShaderModule(const std::vector<char>& code);
     void createGraphicsPipeline();
 
+    void createFramebuffers();
+
     void cleanup();
 
     void mainLoop();
@@ -86,17 +88,23 @@ private:
     VkInstance m_instance;
     VkSurfaceKHR m_windowSurface;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+    
     VkDevice m_logicalDevice;
     VkQueue m_graphicsQueue;
     VkQueue m_presentQueue;
+
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchainImages;
     std::vector<VkImageView> m_swapchainImageViews;
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
+
     VkRenderPass m_renderPass;
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_graphicsPipeline;
+    
+    std::vector<VkFramebuffer> m_swapchainFramebuffers;
+
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
