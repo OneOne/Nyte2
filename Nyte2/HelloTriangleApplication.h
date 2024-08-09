@@ -70,6 +70,9 @@ private:
     void createImageViews();
 #pragma endregion Swapchain
 
+    VkShaderModule createShaderModule(const std::vector<char>& code);
+    void createGraphicsPipeline();
+
     void cleanup();
 
     void mainLoop();
