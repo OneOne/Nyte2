@@ -111,6 +111,8 @@ void HelloTriangleApplication::initVulkan()
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createCommandBuffers();
+    createSemaphoresAndFences();
 }
 
 
@@ -610,6 +612,18 @@ void HelloTriangleApplication::createRenderPass()
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
 
+    // Subpass dependencies handle the transition between subpasses including before and after the subpass
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0; // subpass index
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
     VCR(vkCreateRenderPass(m_logicalDevice, &renderPassInfo, nullptr, &m_renderPass), "Failed to create render pass.");
 }
 VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) 
@@ -836,6 +850,8 @@ void HelloTriangleApplication::createCommandBuffers()
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = (u32)m_commandBuffers.size();
 
+    VCR(vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_commandBuffers.data()), "Failed to allocate command buffers.");
+
     for (u32 i = 0; i < (u32)m_commandBuffers.size(); i++) 
     {
         VkCommandBufferBeginInfo beginInfo{};
@@ -867,8 +883,37 @@ void HelloTriangleApplication::createCommandBuffers()
     }
 }
 
+void HelloTriangleApplication::createSemaphoresAndFences()
+{
+    m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    m_imagesInFlightFences.resize(m_swapchainImages.size(), VK_NULL_HANDLE);
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        VCR(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Failed to create semaphore.");
+        VCR(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Failed to create semaphore.");
+        VCR(vkCreateFence(m_logicalDevice, &fenceInfo, nullptr, &m_inFlightFences[i]), "Failed to create fence.");
+    }
+}
+
 void HelloTriangleApplication::cleanup() 
 {
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+    {
+        vkDestroySemaphore(m_logicalDevice, m_renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(m_logicalDevice, m_imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(m_logicalDevice, m_inFlightFences[i], nullptr);
+    }
+
     vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
     for (VkFramebuffer& framebuffer : m_swapchainFramebuffers) 
     {
@@ -903,7 +948,65 @@ void HelloTriangleApplication::mainLoop()
     while (!glfwWindowShouldClose(m_window)) 
     {
         glfwPollEvents();
+        drawFrame();
     }
+
+    vkDeviceWaitIdle(m_logicalDevice);
+}
+
+void HelloTriangleApplication::drawFrame()
+{
+    // Acquire next available image in swapchain
+    u32 imageIndex;
+    vkAcquireNextImageKHR(m_logicalDevice, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    // Ensure no operation are currently done on this image
+    if (m_imagesInFlightFences[imageIndex] != VK_NULL_HANDLE) 
+    {
+        vkWaitForFences(m_logicalDevice, 1, &m_imagesInFlightFences[imageIndex], VK_TRUE, UINT64_MAX);
+    }
+    // Set fence with current image fence
+    m_imagesInFlightFences[imageIndex] = m_inFlightFences[m_currentFrame];
+
+    // Submit corresponding command buffer to queue
+    VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
+    VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[m_currentFrame] };
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores; // wait image is available
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &m_commandBuffers[imageIndex];
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores; // signal image has been rendered once command buffer is executed
+
+    // Reset in-flight fence for current frame just before submitting to graphics queue
+    vkResetFences(m_logicalDevice, 1, &m_inFlightFences[m_currentFrame]);
+
+    VCR(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]), "Failed to submit command buffer to queue.");
+
+    // Present: send swapchain image result to display
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores; // wait that image has been rendered before present
+
+    VkSwapchainKHR swapchains[] = { m_swapchain };
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapchains;
+    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pResults = nullptr; // Optional
+
+    VCR(vkQueuePresentKHR(m_presentQueue, &presentInfo), "Failed to present.");
+    
+    vkQueueWaitIdle(m_presentQueue);
+
+    //m_currentFrame = (m_currentFrame + 1) & 1;
+    m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 
