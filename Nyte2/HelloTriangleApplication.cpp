@@ -91,9 +91,16 @@ void HelloTriangleApplication::initWindow()
 {
     glfwInit(); // init glfw lib
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // avoid openGL context creation
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable window resize (for now)
+    //glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // window resize enabled by default
 
-    m_window = glfwCreateWindow(m_WindowWidth, m_WindowHeight, "Vulkan", nullptr, nullptr);
+    m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(m_window, this);
+    glfwSetFramebufferSizeCallback(m_window, framebufferSizeChanged);
+}
+void HelloTriangleApplication::framebufferSizeChanged(GLFWwindow* window, int width, int height)
+{
+    HelloTriangleApplication* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->m_framebufferResized = true;
 }
 
 void HelloTriangleApplication::initVulkan() 
@@ -491,11 +498,15 @@ VkExtent2D HelloTriangleApplication::chooseSwapExtent(const VkSurfaceCapabilitie
     if (_capabilities.currentExtent.width != numeric_limits<u32>::max()) 
         return _capabilities.currentExtent;
 
+    int width, height;
+    glfwGetFramebufferSize(m_window, &width, &height);
 
-    VkExtent2D actualExtent = { m_WindowWidth, m_WindowHeight };
-
+    VkExtent2D actualExtent = { (u32)width, (u32)height };
     actualExtent.width = clamp(actualExtent.width, _capabilities.minImageExtent.width, _capabilities.maxImageExtent.width);
     actualExtent.height = clamp(actualExtent.height, _capabilities.minImageExtent.height, _capabilities.maxImageExtent.height);
+
+    m_windowWidth = actualExtent.width;
+    m_windowHeight = actualExtent.height;
 
     return actualExtent;
 }
@@ -582,6 +593,49 @@ void HelloTriangleApplication::createImageViews()
         VCR(vkCreateImageView(m_logicalDevice, &createInfo, nullptr, &m_swapchainImageViews[i]), "Failed to create image view.");
     }
 }
+void HelloTriangleApplication::destroySwapchain()
+{
+    for (VkFramebuffer& framebuffer : m_swapchainFramebuffers)
+    {
+        vkDestroyFramebuffer(m_logicalDevice, framebuffer, nullptr);
+    }
+
+    vkFreeCommandBuffers(m_logicalDevice, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
+    
+    vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
+    vkDestroyRenderPass(m_logicalDevice, m_renderPass, nullptr);
+
+    for (VkImageView& imageView : m_swapchainImageViews)
+    {
+        vkDestroyImageView(m_logicalDevice, imageView, nullptr);
+    }
+    vkDestroySwapchainKHR(m_logicalDevice, m_swapchain, nullptr);
+}
+void HelloTriangleApplication::recreateSwapChain()
+{
+    // Handle framebuffer size (0,0) by waiting futher events
+    // note: this can happen when the window is minimized
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    while (width == 0 || height == 0) 
+    {
+        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(m_logicalDevice);
+
+    destroySwapchain();
+
+    createSwapchain();
+    createImageViews();
+    createRenderPass();
+    createGraphicsPipeline();
+    createFramebuffers();
+    createCommandBuffers();
+}
+
 #pragma endregion Swapchain
 
 void HelloTriangleApplication::createRenderPass()
@@ -907,6 +961,8 @@ void HelloTriangleApplication::createSemaphoresAndFences()
 
 void HelloTriangleApplication::cleanup() 
 {
+    destroySwapchain();
+
     for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vkDestroySemaphore(m_logicalDevice, m_renderFinishedSemaphores[i], nullptr);
@@ -915,21 +971,7 @@ void HelloTriangleApplication::cleanup()
     }
 
     vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
-    for (VkFramebuffer& framebuffer : m_swapchainFramebuffers) 
-    {
-        vkDestroyFramebuffer(m_logicalDevice, framebuffer, nullptr);
-    }
-
-    vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
-    vkDestroyRenderPass(m_logicalDevice, m_renderPass, nullptr);
-
-    for (VkImageView& imageView : m_swapchainImageViews)
-    {
-        vkDestroyImageView(m_logicalDevice, imageView, nullptr);
-    }
-
-    vkDestroySwapchainKHR(m_logicalDevice, m_swapchain, nullptr);
+    
     vkDestroyDevice(m_logicalDevice, nullptr);
 
 #if _DEBUG
@@ -958,7 +1000,20 @@ void HelloTriangleApplication::drawFrame()
 {
     // Acquire next available image in swapchain
     u32 imageIndex;
-    vkAcquireNextImageKHR(m_logicalDevice, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult acquireResult = vkAcquireNextImageKHR(m_logicalDevice, m_swapchain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        recreateSwapChain();
+        return;
+    }
+    else if (acquireResult == VK_SUBOPTIMAL_KHR)
+    {
+        // Nothing to do. Swapchain can still be used to present image eventho some settings of the window
+        // do not correspond to the swapchain.
+    }
+    else
+        VCR(acquireResult, "Failed to acquire next image in swapchain.");
 
     // Ensure no operation are currently done on this image
     if (m_imagesInFlightFences[imageIndex] != VK_NULL_HANDLE) 
@@ -1001,12 +1056,19 @@ void HelloTriangleApplication::drawFrame()
     presentInfo.pImageIndices = &imageIndex;
     presentInfo.pResults = nullptr; // Optional
 
-    VCR(vkQueuePresentKHR(m_presentQueue, &presentInfo), "Failed to present.");
+    VkResult presentResult = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || m_framebufferResized)
+    {
+        m_framebufferResized = false;
+        recreateSwapChain();
+    }
+    else
+        VCR(presentResult, "Failed to present.");
     
-    vkQueueWaitIdle(m_presentQueue);
-
     //m_currentFrame = (m_currentFrame + 1) & 1;
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+
+    vkQueueWaitIdle(m_presentQueue);
 }
 
 

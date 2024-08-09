@@ -38,6 +38,8 @@ public:
 
 private:
     void initWindow();
+    static void framebufferSizeChanged(GLFWwindow* window, int width, int height);
+
     void initVulkan();
 
 #pragma region Instance & PhysicalDevice
@@ -68,6 +70,8 @@ private:
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& _capabilities);
     void createSwapchain();
     void createImageViews();
+    void destroySwapchain();
+    void recreateSwapChain();
 #pragma endregion Swapchain
 
     void createRenderPass();
@@ -86,10 +90,11 @@ private:
     void drawFrame();
 
 private:
-    GLFWwindow* m_window = nullptr;
-    static constexpr u32 m_WindowWidth = 1024;
-    static constexpr u32 m_WindowHeight = 1024;
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
+
+    GLFWwindow* m_window = nullptr;
+    u32 m_windowWidth = 1024;
+    u32 m_windowHeight = 1024;
 
     VkInstance m_instance;
     VkSurfaceKHR m_windowSurface;
@@ -120,6 +125,8 @@ private:
     std::vector<VkFence> m_inFlightFences;
     std::vector<VkFence> m_imagesInFlightFences;
     u32 m_currentFrame = 0;
+
+    bool m_framebufferResized = false;
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
