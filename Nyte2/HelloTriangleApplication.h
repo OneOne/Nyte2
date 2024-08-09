@@ -70,6 +70,7 @@ private:
     void createImageViews();
 #pragma endregion Swapchain
 
+    void createRenderPass();
     VkShaderModule createShaderModule(const std::vector<char>& code);
     void createGraphicsPipeline();
 
@@ -93,6 +94,9 @@ private:
     std::vector<VkImageView> m_swapchainImageViews;
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
+    VkRenderPass m_renderPass;
+    VkPipelineLayout m_pipelineLayout;
+    VkPipeline m_graphicsPipeline;
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
