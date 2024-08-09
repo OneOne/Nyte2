@@ -110,6 +110,7 @@ void HelloTriangleApplication::initVulkan()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
+    createCommandPool();
 }
 
 
@@ -814,9 +815,61 @@ void HelloTriangleApplication::createFramebuffers()
          VCR(vkCreateFramebuffer(m_logicalDevice, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]), "Failed to create framebuffer.");
      }
 }
+void HelloTriangleApplication::createCommandPool()
+{
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_physicalDevice);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+    poolInfo.flags = 0; // Optional
+
+    VCR(vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool), "Failed to create command pool.");
+}
+void HelloTriangleApplication::createCommandBuffers()
+{
+    m_commandBuffers.resize(m_swapchainFramebuffers.size());
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = (u32)m_commandBuffers.size();
+
+    for (u32 i = 0; i < (u32)m_commandBuffers.size(); i++) 
+    {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0; // Optional
+        beginInfo.pInheritanceInfo = nullptr; // Optional
+
+        VCR(vkBeginCommandBuffer(m_commandBuffers[i], &beginInfo), "Failed to begin command buffer.");
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = m_renderPass;
+        renderPassInfo.framebuffer = m_swapchainFramebuffers[i];
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = m_swapchainExtent;
+
+        VkClearValue clearColor = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // VK_SUBPASS_CONTENTS_INLINE = render pass commands are directly included into the command buffer
+        vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+
+        vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0); // vertexCount, instanceCount, firstVertex, firstInstance
+
+        vkCmdEndRenderPass(m_commandBuffers[i]);
+
+        VCR(vkEndCommandBuffer(m_commandBuffers[i]), "Failed to end command buffer.");
+    }
+}
 
 void HelloTriangleApplication::cleanup() 
 {
+    vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
     for (VkFramebuffer& framebuffer : m_swapchainFramebuffers) 
     {
         vkDestroyFramebuffer(m_logicalDevice, framebuffer, nullptr);

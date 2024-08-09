@@ -75,6 +75,8 @@ private:
     void createGraphicsPipeline();
 
     void createFramebuffers();
+    void createCommandPool();
+    void createCommandBuffers();
 
     void cleanup();
 
@@ -104,7 +106,8 @@ private:
     VkPipeline m_graphicsPipeline;
     
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
-
+    VkCommandPool m_commandPool;
+    std::vector<VkCommandBuffer> m_commandBuffers;
 
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
