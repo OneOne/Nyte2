@@ -1,11 +1,17 @@
 #pragma once
 
+// stl
 #include <stdint.h>
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 #include <vector>
 #include <optional>
+#include <array>
+
+// glfw
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+
+// glm
+#include <glm/glm.hpp>
 
 // class forward decl
 struct GLFWwindow;
@@ -31,6 +37,44 @@ private:
         VkSurfaceCapabilitiesKHR capabilities;
         std::vector<VkSurfaceFormatKHR> formats;
         std::vector<VkPresentModeKHR> presentModes;
+    };
+
+    struct Vertex {
+        glm::vec2 pos;
+        glm::vec3 color;
+
+        static VkVertexInputBindingDescription getBindingDescription()
+        {
+            VkVertexInputBindingDescription bindingDescription{};
+            bindingDescription.binding = 0; // binding index 
+            bindingDescription.stride = sizeof(Vertex);
+            bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+            return bindingDescription;
+        }
+
+        static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
+            std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+
+            // inPosition
+            attributeDescriptions[0].binding = 0;
+            attributeDescriptions[0].location = 0;
+            attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT; // = vec2
+            attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+            // inColor
+            attributeDescriptions[1].binding = 0;
+            attributeDescriptions[1].location = 1;
+            attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT; // = vec3
+            attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+            return attributeDescriptions;
+        }
+    };
+    const std::vector<Vertex> Vertices = 
+    {
+        {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
     };
 
 public:
@@ -80,6 +124,8 @@ private:
 
     void createFramebuffers();
     void createCommandPool();
+    u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
+    void createVertexBuffer();
     void createCommandBuffers();
 
     void createSemaphoresAndFences();
@@ -116,6 +162,8 @@ private:
     
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
     VkCommandPool m_commandPool;
+    VkBuffer m_vertexBuffer;
+    VkDeviceMemory m_vertexBufferDeviceMemory;
     std::vector<VkCommandBuffer> m_commandBuffers;
 
     // Note: Fences synchronize c++ calls with gpu operations
