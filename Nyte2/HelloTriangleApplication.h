@@ -26,10 +26,10 @@ private:
         std::optional<u32> graphicsFamily;
         std::optional<u32> presentFamily;
         std::optional<u32> computeFamily;
-        std::optional<u32> transfertFamily;
+        std::optional<u32> transferFamily;
 
         bool isComplete() {
-            return graphicsFamily.has_value() && presentFamily.has_value();
+            return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
         }
     };
 
@@ -122,8 +122,11 @@ private:
     VkShaderModule createShaderModule(const std::vector<char>& code);
     void createGraphicsPipeline();
 
+    void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, VkSharingMode _sharingMode, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
+    void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
+
     void createFramebuffers();
-    void createCommandPool();
+    void createCommandPools();
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
     void createVertexBuffer();
     void createCommandBuffers();
@@ -147,8 +150,10 @@ private:
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     
     VkDevice m_logicalDevice;
+    QueueFamilyIndices m_queueFamilyIndices;
     VkQueue m_graphicsQueue;
     VkQueue m_presentQueue;
+    VkQueue m_transferQueue;
 
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchainImages;
@@ -161,10 +166,12 @@ private:
     VkPipeline m_graphicsPipeline;
     
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
-    VkCommandPool m_commandPool;
+    VkCommandPool m_graphicsCommandPool;
+    VkCommandPool m_transferCommandPool;
     VkBuffer m_vertexBuffer;
     VkDeviceMemory m_vertexBufferDeviceMemory;
-    std::vector<VkCommandBuffer> m_commandBuffers;
+    std::vector<VkCommandBuffer> m_graphicsCommandBuffers;
+    std::vector<VkCommandBuffer> m_transferCommandBuffers;
 
     // Note: Fences synchronize c++ calls with gpu operations
     //       Semaphores synchronize gpu operations with one another

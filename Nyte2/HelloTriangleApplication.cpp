@@ -119,7 +119,7 @@ void HelloTriangleApplication::initVulkan()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
-    createCommandPool();
+    createCommandPools();
     createVertexBuffer();
     createCommandBuffers();
     createSemaphoresAndFences();
@@ -322,16 +322,24 @@ HelloTriangleApplication::QueueFamilyIndices HelloTriangleApplication::findQueue
 
     for (int i=0; i<queueFamilies.size(); ++i) 
     {
+        // graphics
         const VkQueueFamilyProperties& queueFamily = queueFamilies[i];
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) 
         {
             queueIndices.graphicsFamily = i;
         }
 
+        // present
         VkBool32 presentSupport = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(_device, i, m_windowSurface, &presentSupport);
         if (presentSupport)
             queueIndices.presentFamily = i; // probably the same as graphics
+
+        // transfer
+        if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT && !(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT))
+        {
+            queueIndices.transferFamily = i;
+        }
 
         if(queueIndices.isComplete())
             break;
@@ -403,12 +411,13 @@ void HelloTriangleApplication::setupDebugMessenger()
 
 void HelloTriangleApplication::createLogicalDevice()
 {
-    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+    m_queueFamilyIndices = findQueueFamilies(m_physicalDevice);
 
     // note: queue family must be unique, cannot create twice a queue for a same index.
     set<u32> uniqueQueueFamilies = {
-        indices.graphicsFamily.value(),
-        indices.presentFamily.value()
+        m_queueFamilyIndices.graphicsFamily.value(),
+        m_queueFamilyIndices.presentFamily.value(),
+        m_queueFamilyIndices.transferFamily.value()
     };
 
     vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -444,8 +453,9 @@ void HelloTriangleApplication::createLogicalDevice()
 
     VCR(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_logicalDevice), "Failed to create the logical device.");
 
-    vkGetDeviceQueue(m_logicalDevice, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
-    vkGetDeviceQueue(m_logicalDevice, indices.presentFamily.value(), 0, &m_presentQueue);
+    vkGetDeviceQueue(m_logicalDevice, m_queueFamilyIndices.graphicsFamily.value(), 0, &m_graphicsQueue);
+    vkGetDeviceQueue(m_logicalDevice, m_queueFamilyIndices.presentFamily.value(), 0, &m_presentQueue);
+    vkGetDeviceQueue(m_logicalDevice, m_queueFamilyIndices.transferFamily.value(), 0, &m_transferQueue);
 }
 
 
@@ -538,12 +548,11 @@ void HelloTriangleApplication::createSwapchain()
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = m_swapchainExtent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // images in swapchain are use directly as color, use TRANSFERT_DST to use other images to be transfered into swap chain
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // images in swapchain are use directly as color, use TRANSFER_DST to use other images to be transfered into swap chain
 
-    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
-    u32 queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+    u32 queueFamilyIndices[] = { m_queueFamilyIndices.graphicsFamily.value(), m_queueFamilyIndices.presentFamily.value() };
 
-    if (indices.graphicsFamily != indices.presentFamily) {
+    if (m_queueFamilyIndices.graphicsFamily != m_queueFamilyIndices.presentFamily) {
         createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT; // images can be shared by sevral queues
         createInfo.queueFamilyIndexCount = 2;
         createInfo.pQueueFamilyIndices = queueFamilyIndices;
@@ -603,7 +612,8 @@ void HelloTriangleApplication::destroySwapchain()
         vkDestroyFramebuffer(m_logicalDevice, framebuffer, nullptr);
     }
 
-    vkFreeCommandBuffers(m_logicalDevice, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()), m_commandBuffers.data());
+    vkFreeCommandBuffers(m_logicalDevice, m_transferCommandPool, static_cast<uint32_t>(m_transferCommandBuffers.size()), m_transferCommandBuffers.data());
+    vkFreeCommandBuffers(m_logicalDevice, m_graphicsCommandPool, static_cast<uint32_t>(m_graphicsCommandBuffers.size()), m_graphicsCommandBuffers.data());
     
     vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
@@ -869,6 +879,78 @@ void HelloTriangleApplication::createGraphicsPipeline()
     vkDestroyShaderModule(m_logicalDevice, vertexShaderModule, nullptr);
 }
 
+void HelloTriangleApplication::createBuffer(
+    VkDeviceSize _size, 
+    VkBufferUsageFlags _usage, 
+    VkSharingMode _sharingMode, 
+    u32 _sharedQueueCount, 
+    u32* _sharedQueueIndices, 
+    VkMemoryPropertyFlags _properties, 
+    VkBuffer& _buffer, 
+    VkDeviceMemory& _bufferDeviceMemory)
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = _size;
+    bufferInfo.usage = _usage;
+    bufferInfo.sharingMode = _sharingMode; // if used by more than one queue shared, otherwise can be exclusive
+    if (_sharingMode & VK_SHARING_MODE_CONCURRENT)
+    {
+        bufferInfo.pQueueFamilyIndices = _sharedQueueIndices;
+        bufferInfo.queueFamilyIndexCount = _sharedQueueCount;
+    }
+
+    VCR(vkCreateBuffer(m_logicalDevice, &bufferInfo, nullptr, &_buffer), "Failed to create buffer.");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_logicalDevice, _buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, _properties);
+
+    VCR(vkAllocateMemory(m_logicalDevice, &allocInfo, nullptr, &_bufferDeviceMemory), "Failed to allocate buffer device memory.");
+
+    vkBindBufferMemory(m_logicalDevice, _buffer, _bufferDeviceMemory, 0);
+}
+void HelloTriangleApplication::copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size)
+{
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = m_transferCommandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer copyCommandBuffer;
+    vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, &copyCommandBuffer);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(copyCommandBuffer, &beginInfo);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = 0; // Optional
+    copyRegion.dstOffset = 0; // Optional
+    copyRegion.size = _size;
+    vkCmdCopyBuffer(copyCommandBuffer, _srcBuffer, _dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(copyCommandBuffer);
+
+    // submit command buffer
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &copyCommandBuffer;
+
+    vkQueueSubmit(m_transferQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_transferQueue);
+
+    vkFreeCommandBuffers(m_logicalDevice, m_transferCommandPool, 1, &copyCommandBuffer);
+}
+
 void HelloTriangleApplication::createFramebuffers()
 {
      m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
@@ -889,16 +971,22 @@ void HelloTriangleApplication::createFramebuffers()
          VCR(vkCreateFramebuffer(m_logicalDevice, &framebufferInfo, nullptr, &m_swapchainFramebuffers[i]), "Failed to create framebuffer.");
      }
 }
-void HelloTriangleApplication::createCommandPool()
+void HelloTriangleApplication::createCommandPools()
 {
-    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_physicalDevice);
+    // Graphics
+    VkCommandPoolCreateInfo graphicsPoolInfo{};
+    graphicsPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    graphicsPoolInfo.queueFamilyIndex = m_queueFamilyIndices.graphicsFamily.value();
+    graphicsPoolInfo.flags = 0; // Optional
+    VCR(vkCreateCommandPool(m_logicalDevice, &graphicsPoolInfo, nullptr, &m_graphicsCommandPool), "Failed to create command pool.");
 
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-    poolInfo.flags = 0; // Optional
+    // Transfer
+    VkCommandPoolCreateInfo transferPoolInfo{};
+    transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    transferPoolInfo.queueFamilyIndex = m_queueFamilyIndices.transferFamily.value();
+    transferPoolInfo.flags = 0; // Optional
+    VCR(vkCreateCommandPool(m_logicalDevice, &transferPoolInfo, nullptr, &m_transferCommandPool), "Failed to create command pool.");
 
-    VCR(vkCreateCommandPool(m_logicalDevice, &poolInfo, nullptr, &m_commandPool), "Failed to create command pool.");
 }
 u32 HelloTriangleApplication::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
 {
@@ -920,57 +1008,65 @@ u32 HelloTriangleApplication::findMemoryType(u32 typeFilter, VkMemoryPropertyFla
 }
 void HelloTriangleApplication::createVertexBuffer()
 {
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = sizeof(Vertex) * Vertices.size();
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // only used by graphic queue (so exclusive to this queue)
+    VkDeviceSize vertexBufferSize = sizeof(Vertex) * Vertices.size();
 
-    VCR(vkCreateBuffer(m_logicalDevice, &bufferInfo, nullptr, &m_vertexBuffer), "Failed to create vertex buffer.");
+    // Create a staging buffer
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferDeviceMemory;
+    createBuffer(
+        vertexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_SHARING_MODE_EXCLUSIVE, // used by transfer queue only
+        0, 
+        nullptr,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, // VK_MEMORY_PROPERTY_HOST_COHERENT_BIT: ensure coherence between buffer memory and RAM
+        stagingBuffer,
+        stagingBufferDeviceMemory);
 
-    VkMemoryRequirements memRequirements; 
-    // memRequirements.size: buffer size
-    // memRequirements.alignment: buffer offset between the start of allocated memory and the start of stored data
-    // memRequirements.memoryTypeBits: defines combination of memory types
-    vkGetBufferMemoryRequirements(m_logicalDevice, m_vertexBuffer, &memRequirements);
-
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    // VK_MEMORY_PROPERTY_HOST_COHERENT_BIT: ensure coherence between buffer memory and RAM
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-    VCR(vkAllocateMemory(m_logicalDevice, &allocInfo, nullptr, &m_vertexBufferDeviceMemory), "Failed to allocate vertex buffer memory.");
-
-    vkBindBufferMemory(m_logicalDevice, m_vertexBuffer, m_vertexBufferDeviceMemory, 0); // 0 = offset between memory start and buffer start
-
-    // Finally, map vertices to the buffer memory
+    // Map vertices to the staging buffer
     void* data;
-    vkMapMemory(m_logicalDevice, m_vertexBufferDeviceMemory, 0, bufferInfo.size, 0, &data);
-    memcpy(data, Vertices.data(), (size_t)bufferInfo.size);
-    vkUnmapMemory(m_logicalDevice, m_vertexBufferDeviceMemory);
+    vkMapMemory(m_logicalDevice, stagingBufferDeviceMemory, 0, vertexBufferSize, 0, &data);
+    memcpy(data, Vertices.data(), (size_t)vertexBufferSize);
+    vkUnmapMemory(m_logicalDevice, stagingBufferDeviceMemory);
+
+    // Create the vertex buffer (GPU only)
+    u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
+    createBuffer(
+        vertexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_SHARING_MODE_CONCURRENT, // used by graphic queue and transfer queue (therefore shared by several queues)
+        2,
+        &queueIndices[0],
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU only buffer
+        m_vertexBuffer,
+        m_vertexBufferDeviceMemory);
+
+    // Copy staging to vertex buffer (one shot)
+    copyBuffer(stagingBuffer, m_vertexBuffer, vertexBufferSize);
+
+    vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
+    vkFreeMemory(m_logicalDevice, stagingBufferDeviceMemory, nullptr);
 }
 void HelloTriangleApplication::createCommandBuffers()
 {
-    m_commandBuffers.resize(m_swapchainFramebuffers.size());
+    m_graphicsCommandBuffers.resize(m_swapchainFramebuffers.size());
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = m_commandPool;
+    allocInfo.commandPool = m_graphicsCommandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = (u32)m_commandBuffers.size();
+    allocInfo.commandBufferCount = (u32)m_graphicsCommandBuffers.size();
 
-    VCR(vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_commandBuffers.data()), "Failed to allocate command buffers.");
+    VCR(vkAllocateCommandBuffers(m_logicalDevice, &allocInfo, m_graphicsCommandBuffers.data()), "Failed to allocate command buffers.");
 
-    for (u32 i = 0; i < (u32)m_commandBuffers.size(); i++) 
+    for (u32 i = 0; i < (u32)m_graphicsCommandBuffers.size(); i++) 
     {
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = 0; // Optional
         beginInfo.pInheritanceInfo = nullptr; // Optional
 
-        VCR(vkBeginCommandBuffer(m_commandBuffers[i], &beginInfo), "Failed to begin command buffer.");
+        VCR(vkBeginCommandBuffer(m_graphicsCommandBuffers[i], &beginInfo), "Failed to begin command buffer.");
 
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -983,19 +1079,19 @@ void HelloTriangleApplication::createCommandBuffers()
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
-        vkCmdBeginRenderPass(m_commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // VK_SUBPASS_CONTENTS_INLINE = render pass commands are directly included into the command buffer
-        vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+        vkCmdBeginRenderPass(m_graphicsCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // VK_SUBPASS_CONTENTS_INLINE = render pass commands are directly included into the command buffer
+        vkCmdBindPipeline(m_graphicsCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
 
         // bind vertex buffer
         VkBuffer vertexBuffers[] = { m_vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(m_commandBuffers[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindVertexBuffers(m_graphicsCommandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-        vkCmdDraw(m_commandBuffers[i], (u32)Vertices.size(), 1, 0, 0); // vertexCount, instanceCount, firstVertex, firstInstance
+        vkCmdDraw(m_graphicsCommandBuffers[i], (u32)Vertices.size(), 1, 0, 0); // vertexCount, instanceCount, firstVertex, firstInstance
 
-        vkCmdEndRenderPass(m_commandBuffers[i]);
+        vkCmdEndRenderPass(m_graphicsCommandBuffers[i]);
 
-        VCR(vkEndCommandBuffer(m_commandBuffers[i]), "Failed to end command buffer.");
+        VCR(vkEndCommandBuffer(m_graphicsCommandBuffers[i]), "Failed to end command buffer.");
     }
 }
 
@@ -1035,7 +1131,8 @@ void HelloTriangleApplication::cleanup()
 
     vkDestroyBuffer(m_logicalDevice, m_vertexBuffer, nullptr);
     vkFreeMemory(m_logicalDevice, m_vertexBufferDeviceMemory, nullptr);
-    vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
+    vkDestroyCommandPool(m_logicalDevice, m_transferCommandPool, nullptr);
+    vkDestroyCommandPool(m_logicalDevice, m_graphicsCommandPool, nullptr);
     
     vkDestroyDevice(m_logicalDevice, nullptr);
 
@@ -1099,7 +1196,7 @@ void HelloTriangleApplication::drawFrame()
     submitInfo.pWaitSemaphores = waitSemaphores; // wait image is available
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &m_commandBuffers[imageIndex];
+    submitInfo.pCommandBuffers = &m_graphicsCommandBuffers[imageIndex];
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores; // signal image has been rendered once command buffer is executed
 
