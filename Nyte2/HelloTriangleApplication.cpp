@@ -121,6 +121,7 @@ void HelloTriangleApplication::initVulkan()
     createFramebuffers();
     createCommandPools();
     createVertexBuffer();
+    createIndexBuffer();
     createCommandBuffers();
     createSemaphoresAndFences();
 }
@@ -612,8 +613,10 @@ void HelloTriangleApplication::destroySwapchain()
         vkDestroyFramebuffer(m_logicalDevice, framebuffer, nullptr);
     }
 
-    vkFreeCommandBuffers(m_logicalDevice, m_transferCommandPool, static_cast<uint32_t>(m_transferCommandBuffers.size()), m_transferCommandBuffers.data());
-    vkFreeCommandBuffers(m_logicalDevice, m_graphicsCommandPool, static_cast<uint32_t>(m_graphicsCommandBuffers.size()), m_graphicsCommandBuffers.data());
+    if(m_transferCommandBuffers.size() > 0) 
+        vkFreeCommandBuffers(m_logicalDevice, m_transferCommandPool, (u32)m_transferCommandBuffers.size(), m_transferCommandBuffers.data());
+    if(m_graphicsCommandBuffers.size() > 0) 
+        vkFreeCommandBuffers(m_logicalDevice, m_graphicsCommandPool, (u32)m_graphicsCommandBuffers.size(), m_graphicsCommandBuffers.data());
     
     vkDestroyPipeline(m_logicalDevice, m_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(m_logicalDevice, m_pipelineLayout, nullptr);
@@ -988,6 +991,7 @@ void HelloTriangleApplication::createCommandPools()
     VCR(vkCreateCommandPool(m_logicalDevice, &transferPoolInfo, nullptr, &m_transferCommandPool), "Failed to create command pool.");
 
 }
+
 u32 HelloTriangleApplication::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
@@ -1047,6 +1051,43 @@ void HelloTriangleApplication::createVertexBuffer()
     vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
     vkFreeMemory(m_logicalDevice, stagingBufferDeviceMemory, nullptr);
 }
+void HelloTriangleApplication::createIndexBuffer()
+{
+    VkDeviceSize indexBufferSize = sizeof(Indices[0]) * Indices.size();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(
+        indexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_SHARING_MODE_EXCLUSIVE,
+        0,
+        nullptr,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer, 
+        stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, indexBufferSize, 0, &data);
+    memcpy(data, Indices.data(), (size_t)indexBufferSize);
+    vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
+
+    u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
+    createBuffer(
+        indexBufferSize, 
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
+        VK_SHARING_MODE_CONCURRENT,
+        2,
+        &queueIndices[0],
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+        m_indexBuffer, 
+        m_indexBufferDeviceMemory);
+
+    copyBuffer(stagingBuffer, m_indexBuffer, indexBufferSize);
+
+    vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
+    vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
+}
 void HelloTriangleApplication::createCommandBuffers()
 {
     m_graphicsCommandBuffers.resize(m_swapchainFramebuffers.size());
@@ -1086,8 +1127,9 @@ void HelloTriangleApplication::createCommandBuffers()
         VkBuffer vertexBuffers[] = { m_vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(m_graphicsCommandBuffers[i], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(m_graphicsCommandBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-        vkCmdDraw(m_graphicsCommandBuffers[i], (u32)Vertices.size(), 1, 0, 0); // vertexCount, instanceCount, firstVertex, firstInstance
+        vkCmdDrawIndexed(m_graphicsCommandBuffers[i], (u32)Indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
 
         vkCmdEndRenderPass(m_graphicsCommandBuffers[i]);
 
@@ -1129,6 +1171,8 @@ void HelloTriangleApplication::cleanup()
         vkDestroyFence(m_logicalDevice, m_inFlightFences[i], nullptr);
     }
 
+    vkDestroyBuffer(m_logicalDevice, m_indexBuffer, nullptr);
+    vkFreeMemory(m_logicalDevice, m_indexBufferDeviceMemory, nullptr);
     vkDestroyBuffer(m_logicalDevice, m_vertexBuffer, nullptr);
     vkFreeMemory(m_logicalDevice, m_vertexBufferDeviceMemory, nullptr);
     vkDestroyCommandPool(m_logicalDevice, m_transferCommandPool, nullptr);

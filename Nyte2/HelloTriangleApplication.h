@@ -18,6 +18,7 @@ struct GLFWwindow;
 
 // using
 using u32 = uint32_t;
+using u16 = uint16_t;
 
 class HelloTriangleApplication 
 {
@@ -72,10 +73,12 @@ private:
     };
     const std::vector<Vertex> Vertices = 
     {
-        {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+        { { -0.5f, -0.5f }, { 0.0f, 0.0f, 0.0f } },
+        { {  0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+        { { -0.5f,  0.5f }, { 0.0f, 1.0f, 0.0f } },
+        { {  0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f } }
     };
+    const std::vector<u16> Indices = { 0, 1, 2, 1, 3, 2 };
 
 public:
     void run();
@@ -127,11 +130,14 @@ private:
 
     void createFramebuffers();
     void createCommandPools();
+
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
     void createVertexBuffer();
+    void createIndexBuffer();
     void createCommandBuffers();
-
+    
     void createSemaphoresAndFences();
+
 
     void cleanup();
 
@@ -142,8 +148,8 @@ private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
     GLFWwindow* m_window = nullptr;
-    u32 m_windowWidth = 1024;
-    u32 m_windowHeight = 1024;
+    u32 m_windowWidth = 1280;
+    u32 m_windowHeight = 720;
 
     VkInstance m_instance;
     VkSurfaceKHR m_windowSurface;
@@ -168,10 +174,13 @@ private:
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
     VkCommandPool m_graphicsCommandPool;
     VkCommandPool m_transferCommandPool;
-    VkBuffer m_vertexBuffer;
-    VkDeviceMemory m_vertexBufferDeviceMemory;
     std::vector<VkCommandBuffer> m_graphicsCommandBuffers;
     std::vector<VkCommandBuffer> m_transferCommandBuffers;
+
+    VkBuffer m_vertexBuffer;
+    VkDeviceMemory m_vertexBufferDeviceMemory;
+    VkBuffer m_indexBuffer;
+    VkDeviceMemory m_indexBufferDeviceMemory;
 
     // Note: Fences synchronize c++ calls with gpu operations
     //       Semaphores synchronize gpu operations with one another
