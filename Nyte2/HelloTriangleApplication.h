@@ -84,11 +84,11 @@ private:
     };
     const std::vector<u16> Indices = { 0, 1, 2, 1, 3, 2 };
 
-    struct UBO_ModelViewProj // Uniform buffer object
+    struct alignas(16) UBO_ModelViewProj // Uniform buffer object
     {
-        glm::mat4 model;
-        glm::mat4 view;
-        glm::mat4 proj;
+        alignas(16) glm::mat4 model;
+        alignas(16) glm::mat4 view;
+        alignas(16) glm::mat4 proj;
     };
 
 public:
@@ -148,6 +148,8 @@ private:
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
+    void createDescriptorPool();
+    void createDescriptorSets();
     void createCommandBuffers();
     
     void createSemaphoresAndFences();
@@ -184,6 +186,8 @@ private:
 
     VkRenderPass m_renderPass;
     VkDescriptorSetLayout m_descriptorSetLayout;
+    VkDescriptorPool m_descriptorPool;
+    std::vector<VkDescriptorSet> m_descriptorSets;
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_graphicsPipeline;
     
