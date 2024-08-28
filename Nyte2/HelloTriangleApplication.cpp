@@ -117,11 +117,13 @@ void HelloTriangleApplication::initVulkan()
     createSwapchain();
     createImageViews();
     createRenderPass();
+    createDescriptorSetLayout();
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPools();
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffers();
     createCommandBuffers();
     createSemaphoresAndFences();
 }
@@ -649,6 +651,7 @@ void HelloTriangleApplication::recreateSwapChain()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
+    createUniformBuffers();
     createCommandBuffers();
 }
 
@@ -707,6 +710,22 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
     VCR(vkCreateShaderModule(m_logicalDevice, &createInfo, nullptr, &shaderModule), "Failed to create shader module.");
 
     return shaderModule;
+}
+void HelloTriangleApplication::createDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    VCR(vkCreateDescriptorSetLayout(m_logicalDevice, &layoutInfo, nullptr, &m_descriptorSetLayout), "Faild to create descriptor set layout.");
 }
 void HelloTriangleApplication::createGraphicsPipeline()
 {
@@ -850,8 +869,8 @@ void HelloTriangleApplication::createGraphicsPipeline()
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;            // Optional
-    pipelineLayoutInfo.pSetLayouts = nullptr;         // Optional
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 0;    // Optional
     pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
@@ -884,10 +903,7 @@ void HelloTriangleApplication::createGraphicsPipeline()
 
 void HelloTriangleApplication::createBuffer(
     VkDeviceSize _size, 
-    VkBufferUsageFlags _usage, 
-    VkSharingMode _sharingMode, 
-    u32 _sharedQueueCount, 
-    u32* _sharedQueueIndices, 
+    VkBufferUsageFlags _usage,
     VkMemoryPropertyFlags _properties, 
     VkBuffer& _buffer, 
     VkDeviceMemory& _bufferDeviceMemory)
@@ -896,12 +912,38 @@ void HelloTriangleApplication::createBuffer(
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = _size;
     bufferInfo.usage = _usage;
-    bufferInfo.sharingMode = _sharingMode; // if used by more than one queue shared, otherwise can be exclusive
-    if (_sharingMode & VK_SHARING_MODE_CONCURRENT)
-    {
-        bufferInfo.pQueueFamilyIndices = _sharedQueueIndices;
-        bufferInfo.queueFamilyIndexCount = _sharedQueueCount;
-    }
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VCR(vkCreateBuffer(m_logicalDevice, &bufferInfo, nullptr, &_buffer), "Failed to create buffer.");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_logicalDevice, _buffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, _properties);
+
+    VCR(vkAllocateMemory(m_logicalDevice, &allocInfo, nullptr, &_bufferDeviceMemory), "Failed to allocate buffer device memory.");
+
+    vkBindBufferMemory(m_logicalDevice, _buffer, _bufferDeviceMemory, 0);
+}
+void HelloTriangleApplication::createConcurrentBuffer(
+    VkDeviceSize _size,
+    VkBufferUsageFlags _usage,
+    u32 _sharedQueueCount,
+    u32* _sharedQueueIndices,
+    VkMemoryPropertyFlags _properties,
+    VkBuffer& _buffer,
+    VkDeviceMemory& _bufferDeviceMemory)
+{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = _size;
+    bufferInfo.usage = _usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+    bufferInfo.pQueueFamilyIndices = _sharedQueueIndices;
+    bufferInfo.queueFamilyIndexCount = _sharedQueueCount;
 
     VCR(vkCreateBuffer(m_logicalDevice, &bufferInfo, nullptr, &_buffer), "Failed to create buffer.");
 
@@ -1020,9 +1062,6 @@ void HelloTriangleApplication::createVertexBuffer()
     createBuffer(
         vertexBufferSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_SHARING_MODE_EXCLUSIVE, // used by transfer queue only
-        0, 
-        nullptr,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, // VK_MEMORY_PROPERTY_HOST_COHERENT_BIT: ensure coherence between buffer memory and RAM
         stagingBuffer,
         stagingBufferDeviceMemory);
@@ -1035,10 +1074,9 @@ void HelloTriangleApplication::createVertexBuffer()
 
     // Create the vertex buffer (GPU only)
     u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
-    createBuffer(
+    createConcurrentBuffer( // used by graphic queue and transfer queue (therefore shared by several queues)
         vertexBufferSize,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_SHARING_MODE_CONCURRENT, // used by graphic queue and transfer queue (therefore shared by several queues)
         2,
         &queueIndices[0],
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU only buffer
@@ -1060,9 +1098,6 @@ void HelloTriangleApplication::createIndexBuffer()
     createBuffer(
         indexBufferSize,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_SHARING_MODE_EXCLUSIVE,
-        0,
-        nullptr,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         stagingBuffer, 
         stagingBufferMemory);
@@ -1073,10 +1108,9 @@ void HelloTriangleApplication::createIndexBuffer()
     vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
 
     u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
-    createBuffer(
+    createConcurrentBuffer(
         indexBufferSize, 
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
-        VK_SHARING_MODE_CONCURRENT,
         2,
         &queueIndices[0],
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
@@ -1087,6 +1121,23 @@ void HelloTriangleApplication::createIndexBuffer()
 
     vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
     vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
+}
+void HelloTriangleApplication::createUniformBuffers()
+{
+    VkDeviceSize mvpBufferSize = sizeof(UBO_ModelViewProj);
+
+    m_uniformBuffers.resize(m_swapchainImages.size());
+    m_uniformBuffersDeviceMemory.resize(m_swapchainImages.size());
+
+    for (u32 i = 0; i < m_swapchainImages.size(); i++) 
+    {
+        createBuffer(
+            mvpBufferSize, 
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+            m_uniformBuffers[i], 
+            m_uniformBuffersDeviceMemory[i]);
+    }
 }
 void HelloTriangleApplication::createCommandBuffers()
 {
@@ -1164,6 +1215,8 @@ void HelloTriangleApplication::cleanup()
 {
     destroySwapchain();
 
+    vkDestroyDescriptorSetLayout(m_logicalDevice, m_descriptorSetLayout, nullptr);
+
     for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
     {
         vkDestroySemaphore(m_logicalDevice, m_renderFinishedSemaphores[i], nullptr);
@@ -1215,7 +1268,7 @@ void HelloTriangleApplication::drawFrame()
     }
     else if (acquireResult == VK_SUBOPTIMAL_KHR)
     {
-        // Nothing to do. Swapchain can still be used to present image eventho some settings of the window
+        // Nothing to do. Swapchain can still be used to present image even though some settings of the window
         // do not correspond to the swapchain.
     }
     else
@@ -1233,6 +1286,8 @@ void HelloTriangleApplication::drawFrame()
     VkSemaphore waitSemaphores[] = { m_imageAvailableSemaphores[m_currentFrame] };
     VkSemaphore signalSemaphores[] = { m_renderFinishedSemaphores[m_currentFrame] };
     VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+    updateUniformBuffer(imageIndex);
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1275,6 +1330,25 @@ void HelloTriangleApplication::drawFrame()
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
     vkQueueWaitIdle(m_presentQueue);
+}
+void HelloTriangleApplication::updateUniformBuffer(u32 _currentImage) 
+{
+    static chrono::time_point startTime = chrono::high_resolution_clock::now();
+
+    chrono::time_point currentTime = chrono::high_resolution_clock::now();
+    float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
+
+    UBO_ModelViewProj ubo_MVP{};
+    ubo_MVP.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo_MVP.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo_MVP.proj = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10.0f);
+
+    ubo_MVP.proj[1][1] *= -1; // convert OpenGL coords to Vulkan coords
+
+    void* data;
+    vkMapMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[_currentImage], 0, sizeof(ubo_MVP), 0, &data);
+    memcpy(data, &ubo_MVP, sizeof(ubo_MVP));
+    vkUnmapMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[_currentImage]);
 }
 
 

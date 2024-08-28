@@ -5,13 +5,17 @@
 #include <vector>
 #include <optional>
 #include <array>
+#include <chrono>
 
 // glfw
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 // glm
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 
 // class forward decl
 struct GLFWwindow;
@@ -80,6 +84,13 @@ private:
     };
     const std::vector<u16> Indices = { 0, 1, 2, 1, 3, 2 };
 
+    struct UBO_ModelViewProj // Uniform buffer object
+    {
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+    };
+
 public:
     void run();
 
@@ -123,9 +134,11 @@ private:
 
     void createRenderPass();
     VkShaderModule createShaderModule(const std::vector<char>& code);
+    void createDescriptorSetLayout();
     void createGraphicsPipeline();
 
-    void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, VkSharingMode _sharingMode, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
+    void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
+    void createConcurrentBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
 
     void createFramebuffers();
@@ -134,6 +147,7 @@ private:
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
     void createVertexBuffer();
     void createIndexBuffer();
+    void createUniformBuffers();
     void createCommandBuffers();
     
     void createSemaphoresAndFences();
@@ -143,6 +157,7 @@ private:
 
     void mainLoop();
     void drawFrame();
+    void updateUniformBuffer(u32 _currentImage);
 
 private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
@@ -168,6 +183,7 @@ private:
     VkExtent2D m_swapchainExtent;
 
     VkRenderPass m_renderPass;
+    VkDescriptorSetLayout m_descriptorSetLayout;
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_graphicsPipeline;
     
@@ -181,6 +197,8 @@ private:
     VkDeviceMemory m_vertexBufferDeviceMemory;
     VkBuffer m_indexBuffer;
     VkDeviceMemory m_indexBufferDeviceMemory;
+    std::vector<VkBuffer> m_uniformBuffers;
+    std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
 
     // Note: Fences synchronize c++ calls with gpu operations
     //       Semaphores synchronize gpu operations with one another
