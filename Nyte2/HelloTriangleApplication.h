@@ -137,17 +137,27 @@ private:
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
 
+#pragma region Common
+    VkCommandBuffer beginSingleTimeCommands(VkCommandPool _commandPool);
+    void endSingleTimeCommands(VkCommandPool _commandPool, VkQueue _queue, VkCommandBuffer _commandBuffer);
     void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void createConcurrentBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
+    void createImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageMemory);
+    void createConcurrentImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageMemory);
+    void transitionImageLayout(VkImage _image, VkFormat _format, VkImageLayout _oldLayout, VkImageLayout _newLayout);
+    void copyBufferToImage(VkBuffer _buffer, VkImage _image, u32 _width, u32 _height);
+#pragma endregion Common
 
     void createFramebuffers();
     void createCommandPools();
-
+    
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
+    void createTextureImage();
+
     void createDescriptorPool();
     void createDescriptorSets();
     void createCommandBuffers();
@@ -203,6 +213,8 @@ private:
     VkDeviceMemory m_indexBufferDeviceMemory;
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
+    VkImage m_textureImage;
+    VkDeviceMemory m_textureImageDeviceMemory;
 
     // Note: Fences synchronize c++ calls with gpu operations
     //       Semaphores synchronize gpu operations with one another
