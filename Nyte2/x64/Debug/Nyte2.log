@@ -1,2 +1,4 @@
 ﻿  HelloTriangleApplication.cpp
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(269,36): warning C4805: '&=': unsafe mix of type 'bool' and type 'VkBool32' in operation
+D:\WS\Nyte2\Nyte2\HelloTriangleApplication.cpp(269,36): warning C4805: '&': unsafe mix of type 'bool' and type 'VkBool32' in operation
   Nyte2.vcxproj -> D:\WS\Nyte2\Nyte2\x64\Debug\Nyte2.exe

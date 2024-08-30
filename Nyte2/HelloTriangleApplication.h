@@ -147,6 +147,7 @@ private:
     void createConcurrentImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageMemory);
     void transitionImageLayout(VkImage _image, VkFormat _format, VkImageLayout _oldLayout, VkImageLayout _newLayout);
     void copyBufferToImage(VkBuffer _buffer, VkImage _image, u32 _width, u32 _height);
+    void createImageView(VkImage _image, VkFormat _format, VkImageView& _imageView);
 #pragma endregion Common
 
     void createFramebuffers();
@@ -157,6 +158,8 @@ private:
     void createIndexBuffer();
     void createUniformBuffers();
     void createTextureImage();
+    void createTextureImageView();
+    void createTextureSampler();
 
     void createDescriptorPool();
     void createDescriptorSets();
@@ -215,6 +218,8 @@ private:
     std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
     VkImage m_textureImage;
     VkDeviceMemory m_textureImageDeviceMemory;
+    VkImageView m_textureImageView;
+    VkSampler m_textureSampler;
 
     // Note: Fences synchronize c++ calls with gpu operations
     //       Semaphores synchronize gpu operations with one another

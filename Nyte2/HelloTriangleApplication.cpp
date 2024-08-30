@@ -127,6 +127,8 @@ void HelloTriangleApplication::initVulkan()
     createIndexBuffer();
     createUniformBuffers();
     createTextureImage();
+    createTextureImageView();
+    createTextureSampler();
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers();
@@ -261,6 +263,12 @@ bool HelloTriangleApplication::isPhysicalDeviceSuitable(VkPhysicalDevice _device
     QueueFamilyIndices indices = findQueueFamilies(_device);
     isSuitable &= indices.isComplete();
 
+    // Features
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(_device, &supportedFeatures);
+    isSuitable &= supportedFeatures.samplerAnisotropy;
+
+    // Extensions
     bool physicalDeviceExtensionsSupported = checkDeviceExtensionSupport(_device);
     isSuitable &= physicalDeviceExtensionsSupported;
 
@@ -446,6 +454,7 @@ void HelloTriangleApplication::createLogicalDevice()
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     VkPhysicalDeviceSynchronization2Features synchronization2Features{};
@@ -596,26 +605,7 @@ void HelloTriangleApplication::createImageViews()
 
     for (u32 i = 0; i < m_swapchainImages.size(); i++)
     {
-        VkImageViewCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = m_swapchainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = m_swapchainImageFormat;
-
-        // Allows to alterate the color channels view
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-        // Subrange allows to specify a subregion of the image to view
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        VCR(vkCreateImageView(m_logicalDevice, &createInfo, nullptr, &m_swapchainImageViews[i]), "Failed to create image view.");
+        createImageView(m_swapchainImages[i],m_swapchainImageFormat,  m_swapchainImageViews[i]);
     }
 }
 void HelloTriangleApplication::destroySwapchain()
@@ -1145,6 +1135,7 @@ void HelloTriangleApplication::transitionImageLayout(VkImage _image, VkFormat _f
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
+        // https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples
         // try to transition between queues
         // only way this does not raise an error is to only transition on transfer queue
         barrier.srcQueueFamilyIndex = m_queueFamilyIndices.transferFamily.value();
@@ -1202,6 +1193,22 @@ void HelloTriangleApplication::copyBufferToImage(VkBuffer _buffer, VkImage _imag
     );
 
     endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer);
+}
+void HelloTriangleApplication::createImageView(VkImage _image, VkFormat _format, VkImageView& _imageView)
+{
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = _image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = _format;
+    viewInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    VCR(vkCreateImageView(m_logicalDevice, &viewInfo, nullptr, &_imageView), "Failed to create image view.");
 }
 #pragma endregion Common
 
@@ -1415,6 +1422,33 @@ void HelloTriangleApplication::createTextureImage()
 
     std::cout << "<<createTextureImage\n";
 }
+void HelloTriangleApplication::createTextureImageView()
+{
+    createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, m_textureImageView);
+}
+
+void HelloTriangleApplication::createTextureSampler()
+{
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+    samplerInfo.maxAnisotropy = 16.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    VCR(vkCreateSampler(m_logicalDevice, &samplerInfo, nullptr, &m_textureSampler), "Failed to create sampler.")
+}
 
 void HelloTriangleApplication::createDescriptorPool()
 {
@@ -1541,6 +1575,8 @@ void HelloTriangleApplication::cleanup()
 {
     destroySwapchain();
 
+    vkDestroySampler(m_logicalDevice, m_textureSampler, nullptr);
+    vkDestroyImageView(m_logicalDevice, m_textureImageView, nullptr);
     vkDestroyImage(m_logicalDevice, m_textureImage, nullptr);
     vkFreeMemory(m_logicalDevice, m_textureImageDeviceMemory, nullptr);
 
