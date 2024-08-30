@@ -266,7 +266,7 @@ bool HelloTriangleApplication::isPhysicalDeviceSuitable(VkPhysicalDevice _device
     // Features
     VkPhysicalDeviceFeatures supportedFeatures;
     vkGetPhysicalDeviceFeatures(_device, &supportedFeatures);
-    isSuitable &= supportedFeatures.samplerAnisotropy;
+    isSuitable &= (supportedFeatures.samplerAnisotropy == VK_TRUE);
 
     // Extensions
     bool physicalDeviceExtensionsSupported = checkDeviceExtensionSupport(_device);
@@ -938,7 +938,15 @@ VkCommandBuffer HelloTriangleApplication::beginSingleTimeCommands(VkCommandPool 
 
     return commandBuffer;
 }
-void HelloTriangleApplication::endSingleTimeCommands(VkCommandPool _commandPool, VkQueue _queue, VkCommandBuffer _commandBuffer) 
+void HelloTriangleApplication::endSingleTimeCommands(
+    VkCommandPool _commandPool, 
+    VkQueue _queue, 
+    VkCommandBuffer _commandBuffer, 
+    u32 _signalSemaphoreCount, 
+    VkSemaphore* _signalSemaphore, 
+    u32 _waitSemaphoreCount, 
+    VkSemaphore* _waitSemaphore, 
+    VkPipelineStageFlags* _waitStageMask) 
 {
     vkEndCommandBuffer(_commandBuffer);
 
@@ -946,6 +954,18 @@ void HelloTriangleApplication::endSingleTimeCommands(VkCommandPool _commandPool,
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &_commandBuffer;
+
+    if (_signalSemaphoreCount>0 && _signalSemaphore != nullptr)
+    {
+        submitInfo.signalSemaphoreCount = _signalSemaphoreCount;
+        submitInfo.pSignalSemaphores = _signalSemaphore;
+    }
+    if (_waitSemaphoreCount > 0 && _waitSemaphore != nullptr)
+    {
+        submitInfo.waitSemaphoreCount = _waitSemaphoreCount;
+        submitInfo.pWaitSemaphores = _waitSemaphore;
+        submitInfo.pWaitDstStageMask = _waitStageMask;
+    }
 
     vkQueueSubmit(_queue, 1, &submitInfo, VK_NULL_HANDLE);
     vkQueueWaitIdle(_queue);
@@ -1108,7 +1128,7 @@ void HelloTriangleApplication::createConcurrentImage(
 
     vkBindImageMemory(m_logicalDevice, m_textureImage, m_textureImageDeviceMemory, 0);
 }
-void HelloTriangleApplication::transitionImageLayout(VkImage _image, VkFormat _format, VkImageLayout _oldLayout, VkImageLayout _newLayout) 
+void HelloTriangleApplication::transitionImageLayout(VkImage _image, VkImageLayout _oldLayout, VkImageLayout _newLayout) 
 {
     VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(m_transferCommandPool);
 
@@ -1130,7 +1150,7 @@ void HelloTriangleApplication::transitionImageLayout(VkImage _image, VkFormat _f
 
     if (_oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && _newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
-        barrier.srcAccessMask = 0;
+        barrier.srcAccessMask = VK_ACCESS_NONE;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -1170,6 +1190,101 @@ void HelloTriangleApplication::transitionImageLayout(VkImage _image, VkFormat _f
     );
 
     endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer);
+}
+void HelloTriangleApplication::transitionImageLayoutToTransfer(VkImage _image)
+{
+    VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(m_transferCommandPool);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = _image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    barrier.srcAccessMask = VK_ACCESS_NONE;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(
+        copyCommandBuffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer);
+}
+void HelloTriangleApplication::transitionImageLayoutFromTransferToGraphics(VkImage _image)
+{
+    VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(m_transferCommandPool);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcQueueFamilyIndex = m_queueFamilyIndices.transferFamily.value(); // (not sure how this is used by Vulkan, as we need to define a semaphore to sync both queue)
+    barrier.dstQueueFamilyIndex = m_queueFamilyIndices.graphicsFamily.value();
+    barrier.image = _image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_NONE;
+    
+    // Create to semaphore to sync transfer and graphic queue
+    // see: 
+    //  - https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#three-dispatches-first-dispatch-writes-to-one-storage-buffer-second-dispatch-writes-to-a-different-storage-buffer-third-dispatch-reads-both
+    //  - https://stackoverflow.com/questions/67993790/how-do-you-properly-transition-the-image-layout-from-transfer-optimal-to-shader
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    VkSemaphore transferSemaphore;
+    VCR(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &transferSemaphore), "Failed to create transfer semaphore.");
+    
+    // Barrier from "Transfer" to "Bottom of pipe" (on transfer queue)
+    vkCmdPipelineBarrier(
+        copyCommandBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    // Submit on transfer queue with the semaphore (that will be signaled once the transition is done)
+    endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer, 1, &transferSemaphore);
+
+    // Now, on graphics queue, we need to submit transition from "Bottom of pipe" to "fragment shader"
+    // with the previous transfer semaphore as waiting
+    VkCommandBuffer graphicsCommandBuffer = beginSingleTimeCommands(m_graphicsCommandPool);
+
+    // We re-use the same memory barrier but this time for the graphics queue
+    barrier.srcAccessMask = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    // Barrier from "None" to "Fragment shader" (on graphics queue)
+    vkCmdPipelineBarrier(
+        graphicsCommandBuffer,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    // Submit on graphics queue waiting the semaphore to be signaled
+    VkPipelineStageFlags waitStageMask[] = { VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
+    endSingleTimeCommands(m_graphicsCommandPool, m_graphicsQueue, graphicsCommandBuffer, 0, nullptr, 1, &transferSemaphore, &waitStageMask[0]);
 }
 void HelloTriangleApplication::copyBufferToImage(VkBuffer _buffer, VkImage _image, u32 _width, u32 _height) 
 {
@@ -1407,11 +1522,12 @@ void HelloTriangleApplication::createTextureImage()
         m_textureImageDeviceMemory);
 
     std::cout << "\t\t >> transition from undefined to transfer dst optimal\n";
-    transitionImageLayout(
-        m_textureImage, 
-        VK_FORMAT_R8G8B8A8_SRGB, 
-        VK_IMAGE_LAYOUT_UNDEFINED, 
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    //transitionImageLayout(
+    //    m_textureImage, 
+    //    VK_FORMAT_R8G8B8A8_SRGB, 
+    //    VK_IMAGE_LAYOUT_UNDEFINED, 
+    //    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    transitionImageLayoutToTransfer(m_textureImage);
     std::cout << "\t\t << transition\n";
 
     std::cout << "\t\t >> copy staging to image\n";
@@ -1419,11 +1535,12 @@ void HelloTriangleApplication::createTextureImage()
     std::cout << "\t\t << copy\n";
 
     std::cout << "\t\t >> transition from transfer dst optimal to shader read only\n";
-    transitionImageLayout(
-        m_textureImage,
-        VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    //transitionImageLayout(
+    //    m_textureImage,
+    //    VK_FORMAT_R8G8B8A8_SRGB,
+    //    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    //    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    transitionImageLayoutFromTransferToGraphics(m_textureImage);
     std::cout << "\t\t << transition\n";
 
     vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
