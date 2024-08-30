@@ -1,7 +1,6 @@
 #version 450
 
 
-
 #if _VERTEX_SHADER
 #pragma shader_stage(vertex)
 
@@ -14,8 +13,10 @@ layout(set = 0, binding = 0) uniform UniformBufferObject
 
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec3 inColor;
+layout(location = 2) in vec2 inTexCoords;
 
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) out vec3 outColor;
+layout(location = 1) out vec2 outTexCoords;
 
 out gl_PerVertex {
     vec4 gl_Position;
@@ -23,7 +24,8 @@ out gl_PerVertex {
 
 void main() {
     gl_Position = ubo_MVP.proj * ubo_MVP.view * ubo_MVP.model * vec4(inPosition, 0.0, 1.0);
-    fragColor = inColor;
+    outColor = inColor;
+    outTexCoords = inTexCoords;
 }
 #endif
 
@@ -31,11 +33,18 @@ void main() {
 #if _FRAGMENT_SHADER
 #pragma shader_stage(fragment)
 
-layout(location = 0) in vec3 fragColor;
+
+layout(set = 0, binding = 1) uniform sampler2D texSamplerLinearRepeat;
+
+layout(location = 0) in vec3 inColor;
+layout(location = 1) in vec2 inTexCoords;
 
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    outColor = vec4(fragColor, 1.0);
+    vec4 color = texture(texSamplerLinearRepeat, inTexCoords*2.0f);
+    color.rgb *= inColor;
+
+    outColor = color;
 }
 #endif
