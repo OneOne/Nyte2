@@ -7,6 +7,12 @@
 @echo ------------------------------------------
 @echo Compiling basic.glsl fragment stage
 %Vulkan_SDK%/Bin/glslc.exe basic.glsl -o fragmentshader.spv -D_FRAGMENT_SHADER=1
+@echo ------------------------------------------
+@echo Compiling model.glsl vertex stage
+%Vulkan_SDK%/Bin/glslc.exe model.glsl -o model_vs.spv -D_VERTEX_SHADER=1
+@echo ------------------------------------------
+@echo Compiling model.glsl fragment stage
+%Vulkan_SDK%/Bin/glslc.exe model.glsl -o model_fs.spv -D_FRAGMENT_SHADER=1
 
 
 

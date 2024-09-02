@@ -8,6 +8,7 @@
 #include <set>
 #include <limits>
 #include <algorithm>
+#include <unordered_map>
 
 #include "FileHelper.h"
 
@@ -16,16 +17,16 @@ using namespace std;
 // VCR for Vulkan Check Result
 #define VCR(val, msg) if(val != VK_SUCCESS) { throw std::runtime_error(msg); }
 
+const vector<const char*> deviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
+};
+
 #if _DEBUG
 // Check "Config/vk_layer_settings.txt" in VulkanSDK to get more information on how to configure validation layer.
 const vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation",
     "VK_LAYER_KHRONOS_synchronization2"
-};
-
-const vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
 };
 
 // Create and Destroy messenger for validation layer callback
@@ -124,6 +125,7 @@ void HelloTriangleApplication::initVulkan()
     createCommandPools();
     createDepthResources();
     createFramebuffers();
+    loadModel();
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
@@ -786,8 +788,10 @@ void HelloTriangleApplication::createGraphicsPipeline()
     //  - Setup dynamic states
     
     // Load and create shader modules
-    vector<octet> vertexShaderCode = FileHelper::readFile("Resources/Shaders/vertexshader.spv");
-    vector<octet> fragmentShaderCode = FileHelper::readFile("Resources/Shaders/fragmentshader.spv");
+    //vector<octet> vertexShaderCode = FileHelper::readFile("Resources/Shaders/vertexshader.spv");
+    //vector<octet> fragmentShaderCode = FileHelper::readFile("Resources/Shaders/fragmentshader.spv");
+    vector<octet> vertexShaderCode = FileHelper::readFile("Resources/Shaders/model_vs.spv");
+    vector<octet> fragmentShaderCode = FileHelper::readFile("Resources/Shaders/model_fs.spv");
 
     VkShaderModule vertexShaderModule = createShaderModule(vertexShaderCode);
     VkShaderModule fragmentShaderModule = createShaderModule(fragmentShaderCode);
@@ -1441,6 +1445,45 @@ void HelloTriangleApplication::createFramebuffers()
      }
 }
 
+void HelloTriangleApplication::loadModel()
+{
+    RawObj model;
+    model.path = MODEL_PATH;
+
+    FileHelper::loadModel(model);
+
+    unordered_map<Vertex, u32> verticesMap{}; // <Vertex, vertexIndex>
+
+    for (const tinyobj::shape_t& shape : model.shapes)
+    {
+        for (const tinyobj::index_t& index : shape.mesh.indices) 
+        {
+            Vertex vertex{};
+            vertex.pos.x = model.attrib.vertices[index.vertex_index * 3 + 0];
+            vertex.pos.y = model.attrib.vertices[index.vertex_index * 3 + 1];
+            vertex.pos.z = model.attrib.vertices[index.vertex_index * 3 + 2];
+
+            vertex.normal.x = model.attrib.normals[index.normal_index * 3 + 0];
+            vertex.normal.y = model.attrib.normals[index.normal_index * 3 + 1];
+            vertex.normal.z = model.attrib.normals[index.normal_index * 3 + 2];
+
+            vertex.texCoords.x = model.attrib.texcoords[index.texcoord_index * 2 + 0];
+            vertex.texCoords.y = 1.0f - model.attrib.texcoords[index.texcoord_index * 2 + 1]; // obj -> vulkan tex coords convertion
+
+            auto it = verticesMap.find(vertex);
+            if (it == verticesMap.end())
+            {
+                u32 vertexIndex = (u32)m_vertices.size();
+                verticesMap[vertex] = vertexIndex;
+                m_vertices.push_back(vertex);
+                m_indices.push_back(vertexIndex);
+            }
+            else
+                m_indices.push_back(it->second);
+        }
+    }
+}
+
 u32 HelloTriangleApplication::findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
 {
     VkPhysicalDeviceMemoryProperties memProperties;
@@ -1461,7 +1504,7 @@ u32 HelloTriangleApplication::findMemoryType(u32 typeFilter, VkMemoryPropertyFla
 }
 void HelloTriangleApplication::createVertexBuffer()
 {
-    VkDeviceSize vertexBufferSize = sizeof(Vertex) * Vertices.size();
+    VkDeviceSize vertexBufferSize = sizeof(Vertex) * m_vertices.size();
 
     // Create a staging buffer
     VkBuffer stagingBuffer;
@@ -1476,7 +1519,7 @@ void HelloTriangleApplication::createVertexBuffer()
     // Map vertices to the staging buffer
     void* data;
     vkMapMemory(m_logicalDevice, stagingBufferDeviceMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, Vertices.data(), (size_t)vertexBufferSize);
+    memcpy(data, m_vertices.data(), (size_t)vertexBufferSize);
     vkUnmapMemory(m_logicalDevice, stagingBufferDeviceMemory);
 
     // Create the vertex buffer (GPU only)
@@ -1498,7 +1541,7 @@ void HelloTriangleApplication::createVertexBuffer()
 }
 void HelloTriangleApplication::createIndexBuffer()
 {
-    VkDeviceSize indexBufferSize = sizeof(Indices[0]) * Indices.size();
+    VkDeviceSize indexBufferSize = sizeof(m_indices[0]) * m_indices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -1511,7 +1554,7 @@ void HelloTriangleApplication::createIndexBuffer()
 
     void* data;
     vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, indexBufferSize, 0, &data);
-    memcpy(data, Indices.data(), (size_t)indexBufferSize);
+    memcpy(data, m_indices.data(), (size_t)indexBufferSize);
     vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
 
     u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
@@ -1549,7 +1592,7 @@ void HelloTriangleApplication::createUniformBuffers()
 void HelloTriangleApplication::createTextureImage()
 {
     RawImage rawImage;
-    rawImage.path = "Resources\\Textures\\texture.jpg";
+    rawImage.path = TEXTURE_PATH;
     FileHelper::loadImage(rawImage);
 
     VkBuffer stagingBuffer;
@@ -1730,10 +1773,10 @@ void HelloTriangleApplication::createCommandBuffers()
         VkBuffer vertexBuffers[] = { m_vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(m_graphicsCommandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(m_graphicsCommandBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(m_graphicsCommandBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(m_graphicsCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSets[i], 0, nullptr);
 
-        vkCmdDrawIndexed(m_graphicsCommandBuffers[i], (u32)Indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
+        vkCmdDrawIndexed(m_graphicsCommandBuffers[i], (u32)m_indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
 
         vkCmdEndRenderPass(m_graphicsCommandBuffers[i]);
 

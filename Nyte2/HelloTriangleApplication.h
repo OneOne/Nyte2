@@ -11,7 +11,8 @@
 #include <GLFW/glfw3.h>
 
 #include "Math.h"
-#include "VertexBasic.h" // glm
+//#include "VertexBasic.h" // glm
+#include "VertexModel.h" // glm
 
 // class forward decl
 struct GLFWwindow;
@@ -115,6 +116,7 @@ private:
 
     void createFramebuffers();
     
+    void loadModel();
 
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
     void createVertexBuffer();
@@ -143,6 +145,9 @@ private:
     GLFWwindow* m_window = nullptr;
     u32 m_windowWidth = 1280;
     u32 m_windowHeight = 720;
+
+    const std::string MODEL_PATH = "Resources/Models/viking_room.obj";
+    const std::string TEXTURE_PATH = "Resources/Textures/viking_room.png";
 
     VkInstance m_instance;
     VkSurfaceKHR m_windowSurface;
@@ -175,6 +180,10 @@ private:
     VkCommandPool m_transferCommandPool;
     std::vector<VkCommandBuffer> m_graphicsCommandBuffers;
     std::vector<VkCommandBuffer> m_transferCommandBuffers;
+
+
+    std::vector<Vertex> m_vertices;
+    std::vector<u32> m_indices;
 
     VkBuffer m_vertexBuffer;
     VkDeviceMemory m_vertexBufferDeviceMemory;
