@@ -1,28 +1,22 @@
 #pragma once
 
 // stl
-#include <stdint.h>
 #include <vector>
-#include <optional>
 #include <array>
+#include <optional>
 #include <chrono>
 
 // glfw
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-// glm
-#define GLM_FORCE_RADIANS
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
+#include "Math.h"
+#include "VertexBasic.h" // glm
 
 // class forward decl
 struct GLFWwindow;
 
-// using
-using u32 = uint32_t;
-using u16 = uint16_t;
+
 
 class HelloTriangleApplication 
 {
@@ -43,55 +37,6 @@ private:
         std::vector<VkSurfaceFormatKHR> formats;
         std::vector<VkPresentModeKHR> presentModes;
     };
-
-    struct Vertex {
-        glm::vec2 pos;
-        glm::vec3 color;
-        glm::vec2 texCoords;
-
-        static VkVertexInputBindingDescription getBindingDescription()
-        {
-            VkVertexInputBindingDescription bindingDescription{};
-            bindingDescription.binding = 0; // binding index 
-            bindingDescription.stride = sizeof(Vertex);
-            bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-            return bindingDescription;
-        }
-
-        using VertexInputAttributDescriptions = std::array<VkVertexInputAttributeDescription, 3>;
-        static VertexInputAttributDescriptions getAttributeDescriptions() 
-        {
-            VertexInputAttributDescriptions attributeDescriptions{};
-
-            // inPosition
-            attributeDescriptions[0].binding = 0;
-            attributeDescriptions[0].location = 0;
-            attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT; // = vec2
-            attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-            // inColor
-            attributeDescriptions[1].binding = 0;
-            attributeDescriptions[1].location = 1;
-            attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT; // = vec3
-            attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-            // inTexCoords
-            attributeDescriptions[2].binding = 0;
-            attributeDescriptions[2].location = 2;
-            attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT; // = vec2
-            attributeDescriptions[2].offset = offsetof(Vertex, texCoords);
-
-            return attributeDescriptions;
-        }
-    };
-    const std::vector<Vertex> Vertices = 
-    {
-        { { -0.5f, -0.5f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f} },
-        { {  0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f} },
-        { { -0.5f,  0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f} },
-        { {  0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f} }
-    };
-    const std::vector<u16> Indices = { 0, 1, 2, 1, 3, 2 };
 
     struct alignas(16) UBO_ModelViewProj // Uniform buffer object
     {
@@ -138,7 +83,7 @@ private:
     void createSwapchain();
     void createImageViews();
     void destroySwapchain();
-    void recreateSwapChain();
+    void recreateSwapchain();
 #pragma endregion Swapchain
 
     void createRenderPass();
@@ -152,18 +97,25 @@ private:
     void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void createConcurrentBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
-    void createImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageMemory);
-    void createConcurrentImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageMemory);
-    void transitionImageLayout(VkImage _image, VkImageLayout _oldLayout, VkImageLayout _newLayout);
+    void createImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
+    void createConcurrentImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
     void transitionImageLayoutToTransfer(VkImage _image);
+    void transitionImageLayoutToGraphics(VkImage _image, VkImageAspectFlags _aspectMask, VkImageLayout _newLayout, VkAccessFlags _dstAccessMask, VkPipelineStageFlags _dstStageMask);
     void transitionImageLayoutFromTransferToGraphics(VkImage _image);
     void copyBufferToImage(VkBuffer _buffer, VkImage _image, u32 _width, u32 _height);
-    void createImageView(VkImage _image, VkFormat _format, VkImageView& _imageView);
+    void createImageView(VkImage _image, VkFormat _format, VkImageAspectFlags _aspectMask, VkImageView& _imageView);
 #pragma endregion Common
 
-    void createFramebuffers();
     void createCommandPools();
+
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& _candidates, VkImageTiling _tiling, VkFormatFeatureFlags _features);
+    bool hasStencilComponent(VkFormat _format);
+    VkFormat findDepthFormat();
+    void createDepthResources();
+
+    void createFramebuffers();
     
+
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
     void createVertexBuffer();
     void createIndexBuffer();
@@ -205,6 +157,9 @@ private:
     VkSwapchainKHR m_swapchain;
     std::vector<VkImage> m_swapchainImages;
     std::vector<VkImageView> m_swapchainImageViews;
+    VkImage m_depthImage;
+    VkDeviceMemory m_depthImageDeviceMemory;
+    VkImageView m_depthImageView;
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
 

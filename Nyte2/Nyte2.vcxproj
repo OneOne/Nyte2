@@ -146,11 +146,13 @@
   <ItemGroup>
     <ClCompile Include="FileHelper.cpp" />
     <ClCompile Include="HelloTriangleApplication.cpp" />
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="mainOld.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileHelper.h" />
     <ClInclude Include="HelloTriangleApplication.h" />
+    <ClInclude Include="Math.h" />
+    <ClInclude Include="VertexBasic.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
