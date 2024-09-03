@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <unordered_map>
 
+#include "VulkanHelper.h"
+
 using namespace std;
 
 // VCR for Vulkan Check Result
@@ -121,6 +123,7 @@ void HelloTriangleApplication::initVulkan()
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPools();
+    createColorResources();
     createDepthResources();
     createFramebuffers();
     loadModel();
@@ -237,6 +240,7 @@ void HelloTriangleApplication::pickPhysicalDevice()
     {
         if (isPhysicalDeviceSuitable(device)) {
             m_physicalDevice = device;
+            m_msaaSamples = VulkanHelper::getMaxUsableSampleCount(device);
             break;
         }
     }
@@ -611,6 +615,14 @@ void HelloTriangleApplication::createImageViews()
 }
 void HelloTriangleApplication::destroySwapchain()
 {
+    //vkDestroyImageView(m_logicalDevice, m_normalImageView, nullptr);
+    //vkDestroyImage(m_logicalDevice, m_normalImage, nullptr);
+    //vkFreeMemory(m_logicalDevice, m_normalImageDeviceMemory, nullptr);
+
+    vkDestroyImageView(m_logicalDevice, m_colorImageView, nullptr);
+    vkDestroyImage(m_logicalDevice, m_colorImage, nullptr);
+    vkFreeMemory(m_logicalDevice, m_colorImageDeviceMemory, nullptr);
+
     vkDestroyImageView(m_logicalDevice, m_depthImageView, nullptr);
     vkDestroyImage(m_logicalDevice, m_depthImage, nullptr);
     vkFreeMemory(m_logicalDevice, m_depthImageDeviceMemory, nullptr);
@@ -662,6 +674,7 @@ void HelloTriangleApplication::recreateSwapchain()
     createImageViews();
     createRenderPass();
     createGraphicsPipeline();
+    createColorResources();
     createDepthResources();
     createFramebuffers();
     createUniformBuffers();
@@ -676,13 +689,13 @@ void HelloTriangleApplication::createRenderPass()
     // Color
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_swapchainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.samples = m_msaaSamples;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // clear color framebuffer before pass
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // no stencil == no care
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0; // index 0 (=> layout(location = 0) in shader)
@@ -691,7 +704,7 @@ void HelloTriangleApplication::createRenderPass()
     // Depth
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = findDepthFormat();
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.samples = m_msaaSamples;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -700,17 +713,74 @@ void HelloTriangleApplication::createRenderPass()
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.attachment = 1;  // index 1
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+
+    VkAttachmentDescription colorAttachmentResolve{};
+    colorAttachmentResolve.format = m_swapchainImageFormat;
+    colorAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentResolveRef{};
+    colorAttachmentResolveRef.attachment = 2;  // index 2
+    colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    //// Normal
+    //VkAttachmentDescription normalAttachment{};
+    //normalAttachment.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    //normalAttachment.samples = m_msaaSamples;
+    //normalAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // clear color framebuffer before pass
+    //normalAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    //normalAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // no stencil == no care
+    //normalAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //normalAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //normalAttachment.finalLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+    //
+    //VkAttachmentReference normalAttachmentRef{};
+    //normalAttachmentRef.attachment = 3; // index 3 (=> layout(location = 3) in shader)
+    //normalAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    //
+    //VkAttachmentDescription normalAttachmentResolve{};
+    //normalAttachmentResolve.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    //normalAttachmentResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+    //normalAttachmentResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    //normalAttachmentResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    //normalAttachmentResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    //normalAttachmentResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //normalAttachmentResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //normalAttachmentResolve.finalLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+    //
+    //VkAttachmentReference normalAttachmentResolveRef{};
+    //normalAttachmentResolveRef.attachment = 4;  // index 4
+    //normalAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+
+
     // Subpass
+    //array<VkAttachmentReference, 2> attachmentColorReferences = { colorAttachmentRef, normalAttachmentRef };
+    //array<VkAttachmentReference, 2> attachmentResolveReferences = { colorAttachmentResolveRef, normalAttachmentResolveRef };
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.colorAttachmentCount = 1;//(u32)attachmentColorReferences.size();
+    subpass.pColorAttachments = &colorAttachmentRef; //attachmentColorReferences.data();
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
+    subpass.pResolveAttachments = &colorAttachmentResolveRef; //attachmentResolveReferences.data();
 
-    array<VkAttachmentDescription, 2> attachmentDescriptions = {colorAttachment, depthAttachment};
+    //array<VkAttachmentDescription, 5> attachmentDescriptions = 
+    array<VkAttachmentDescription, 3> attachmentDescriptions = 
+    {
+        colorAttachment, 
+        depthAttachment,
+        colorAttachmentResolve,
+        //normalAttachment,
+        //normalAttachmentResolve,
+    };
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = (u32)attachmentDescriptions.size();
@@ -868,7 +938,7 @@ void HelloTriangleApplication::createGraphicsPipeline()
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = m_msaaSamples;
     multisampling.minSampleShading = 1.0f; // Optional
     multisampling.pSampleMask = nullptr; // Optional
     multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
@@ -1080,51 +1150,10 @@ void HelloTriangleApplication::copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuff
     endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer);
 }
 void HelloTriangleApplication::createImage(
-    u32 _width, 
-    u32 _height, 
-    VkFormat _format, 
-    VkImageTiling _tiling, 
-    VkImageUsageFlags _usage, 
-    VkMemoryPropertyFlags _properties, 
-    VkImage& _image, 
-    VkDeviceMemory& _imageDeviceMemory)
-{
-    u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
-
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = _width;
-    imageInfo.extent.height = _height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = _format;
-    imageInfo.tiling = _tiling; // optimal pixel order for access (otherwise, it would be linear = pixels ordered row per row)
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // not usable by the GPU and the very first transition will discard the texels
-    imageInfo.usage = _usage;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT; // no msaa
-    imageInfo.flags = 0; // Optional
-
-    VCR(vkCreateImage(m_logicalDevice, &imageInfo, nullptr, &_image), "Failed to create image.");
-
-    VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(m_logicalDevice, _image, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, _properties);
-
-    VCR(vkAllocateMemory(m_logicalDevice, &allocInfo, nullptr, &_imageDeviceMemory), "Failed to allocate image device memory.");
-
-    vkBindImageMemory(m_logicalDevice, _image, _imageDeviceMemory, 0);
-}
-void HelloTriangleApplication::createConcurrentImage(
     u32 _width,
     u32 _height,
     u32 _mipLevels,
+    VkSampleCountFlagBits _sampleCount,
     VkFormat _format,
     VkImageTiling _tiling,
     VkImageUsageFlags _usage,
@@ -1149,9 +1178,9 @@ void HelloTriangleApplication::createConcurrentImage(
     imageInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
     imageInfo.queueFamilyIndexCount = _sharedQueueCount;
     imageInfo.pQueueFamilyIndices = _sharedQueueIndices;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT; // no msaa
+    imageInfo.samples = _sampleCount;
     imageInfo.flags = 0; // Optional
-
+    
     VCR(vkCreateImage(m_logicalDevice, &imageInfo, nullptr, &_image), "Failed to create image.");
 
     VkMemoryRequirements memRequirements;
@@ -1472,6 +1501,48 @@ void HelloTriangleApplication::createCommandPools()
 
 }
 
+void HelloTriangleApplication::createColorResources()
+{
+    VkFormat colorFormat = m_swapchainImageFormat;
+    u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
+
+    createImage(
+        m_swapchainExtent.width, 
+        m_swapchainExtent.height, 
+        1, 
+        m_msaaSamples, 
+        colorFormat, 
+        VK_IMAGE_TILING_OPTIMAL, 
+        VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, 
+        2,
+        &queueIndices[0],
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+        m_colorImage, 
+        m_colorImageDeviceMemory);
+
+    createImageView(m_colorImage, colorFormat, 1, VK_IMAGE_ASPECT_COLOR_BIT, m_colorImageView);
+
+
+    //// normal
+    //VkFormat normalFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+    //
+    //createImage(
+    //    m_swapchainExtent.width,
+    //    m_swapchainExtent.height,
+    //    1,
+    //    m_msaaSamples,
+    //    normalFormat,
+    //    VK_IMAGE_TILING_OPTIMAL,
+    //    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    //    2,
+    //    &queueIndices[0],
+    //    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    //    m_normalImage,
+    //    m_normalImageDeviceMemory);
+    //
+    //createImageView(m_normalImage, normalFormat, 1, VK_IMAGE_ASPECT_COLOR_BIT, m_normalImageView);
+}
+
 VkFormat HelloTriangleApplication::findSupportedFormat(const std::vector<VkFormat>& _candidates, VkImageTiling _tiling, VkFormatFeatureFlags _features) 
 {
     for (VkFormat format : _candidates) 
@@ -1508,10 +1579,11 @@ void HelloTriangleApplication::createDepthResources()
     VkFormat depthFormat = findDepthFormat();
     u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
 
-    createConcurrentImage(
+    createImage(
         m_swapchainExtent.width, 
         m_swapchainExtent.height, 
         1,
+        m_msaaSamples,
         depthFormat, 
         VK_IMAGE_TILING_OPTIMAL, 
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 
@@ -1539,7 +1611,14 @@ void HelloTriangleApplication::createFramebuffers()
 
      for (u32 i = 0; i < (u32)m_swapchainImageViews.size(); i++) 
      {
-         array<VkImageView, 2> attachments = { m_swapchainImageViews[i], m_depthImageView }; // same  depth image view for each framebuffer as the process is sequential
+         //array<VkImageView, 4> attachments = 
+         array<VkImageView, 3> attachments = 
+         { 
+             m_colorImageView,
+             //m_normalImageView,
+             m_depthImageView, // same  depth image view for each framebuffer as the process is sequential
+             m_swapchainImageViews[i]
+         }; 
 
 
          VkFramebufferCreateInfo framebufferInfo{};
@@ -1723,10 +1802,11 @@ void HelloTriangleApplication::createTextureImage()
 
     u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
 
-    createConcurrentImage(
+    createImage(
         (u32)m_texture.width,
         (u32)m_texture.height,
         (u32)m_texture.mipLevels,
+        VK_SAMPLE_COUNT_1_BIT,
         VK_FORMAT_R8G8B8A8_SRGB,
         VK_IMAGE_TILING_OPTIMAL, // optimal pixel order for access (otherwise, it would be linear = pixels ordered row per row)
         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, // transfer src/dst for mips blit

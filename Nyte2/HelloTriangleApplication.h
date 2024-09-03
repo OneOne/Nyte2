@@ -99,8 +99,7 @@ private:
     void createBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void createConcurrentBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
-    void createImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
-    void createConcurrentImage(u32 _width, u32 _height, u32 _mipLevels, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
+    void createImage(u32 _width, u32 _height, u32 _mipLevels, VkSampleCountFlagBits _sampleCount, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
     void transitionImageLayoutToTransfer(VkImage _image, u32 _mipLevels);
     void transitionImageLayoutToGraphics(VkImage _image, u32 _mipLevels, VkImageAspectFlags _aspectMask, VkImageLayout _newLayout, VkAccessFlags _dstAccessMask, VkPipelineStageFlags _dstStageMask);
     void transitionImageLayoutFromTransferToGraphics(VkImage _image, u32 _mipLevels);
@@ -110,6 +109,8 @@ private:
 #pragma endregion Common
 
     void createCommandPools();
+
+    void createColorResources();
 
     VkFormat findSupportedFormat(const std::vector<VkFormat>& _candidates, VkImageTiling _tiling, VkFormatFeatureFlags _features);
     bool hasStencilComponent(VkFormat _format);
@@ -150,6 +151,8 @@ private:
 
     const std::string MODEL_PATH = "Resources/Models/viking_room.obj";
     const std::string TEXTURE_PATH = "Resources/Textures/viking_room.png";
+
+    VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
     VkInstance m_instance;
     VkSurfaceKHR m_windowSurface;
@@ -212,4 +215,13 @@ private:
 #if _DEBUG
     VkDebugUtilsMessengerEXT m_callback;
 #endif
+
+    // MSAA Deferred
+    VkImage m_colorImage;
+    VkDeviceMemory m_colorImageDeviceMemory;
+    VkImageView m_colorImageView;
+
+    //VkImage m_normalImage;
+    //VkDeviceMemory m_normalImageDeviceMemory;
+    //VkImageView m_normalImageView;
 };

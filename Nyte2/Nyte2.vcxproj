@@ -155,6 +155,7 @@
     <ClCompile Include="FileHelper.cpp" />
     <ClCompile Include="HelloTriangleApplication.cpp" />
     <ClCompile Include="mainOld.cpp" />
+    <ClCompile Include="VulkanHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileHelper.h" />
@@ -162,6 +163,7 @@
     <ClInclude Include="Math.h" />
     <ClInclude Include="VertexBasic.h" />
     <ClInclude Include="VertexModel.h" />
+    <ClInclude Include="VulkanHelper.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
