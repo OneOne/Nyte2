@@ -14,6 +14,7 @@ struct RawImage
     int height;
     int channels;
     unsigned int size;
+    unsigned int mipLevels;
     void* data;
 };
 

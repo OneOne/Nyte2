@@ -10,8 +10,6 @@
 #include <algorithm>
 #include <unordered_map>
 
-#include "FileHelper.h"
-
 using namespace std;
 
 // VCR for Vulkan Check Result
@@ -608,7 +606,7 @@ void HelloTriangleApplication::createImageViews()
 
     for (u32 i = 0; i < m_swapchainImages.size(); i++)
     {
-        createImageView(m_swapchainImages[i], m_swapchainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, m_swapchainImageViews[i]);
+        createImageView(m_swapchainImages[i], m_swapchainImageFormat, 1, VK_IMAGE_ASPECT_COLOR_BIT, m_swapchainImageViews[i]);
     }
 }
 void HelloTriangleApplication::destroySwapchain()
@@ -1126,6 +1124,7 @@ void HelloTriangleApplication::createImage(
 void HelloTriangleApplication::createConcurrentImage(
     u32 _width,
     u32 _height,
+    u32 _mipLevels,
     VkFormat _format,
     VkImageTiling _tiling,
     VkImageUsageFlags _usage,
@@ -1141,7 +1140,7 @@ void HelloTriangleApplication::createConcurrentImage(
     imageInfo.extent.width = _width;
     imageInfo.extent.height = _height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
+    imageInfo.mipLevels = _mipLevels;
     imageInfo.arrayLayers = 1;
     imageInfo.format = _format;
     imageInfo.tiling = _tiling;
@@ -1167,7 +1166,7 @@ void HelloTriangleApplication::createConcurrentImage(
 
     vkBindImageMemory(m_logicalDevice, _image, _imageDeviceMemory, 0);
 }
-void HelloTriangleApplication::transitionImageLayoutToTransfer(VkImage _image)
+void HelloTriangleApplication::transitionImageLayoutToTransfer(VkImage _image, u32 _mipLevels)
 {
     VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(m_transferCommandPool);
 
@@ -1180,7 +1179,7 @@ void HelloTriangleApplication::transitionImageLayoutToTransfer(VkImage _image)
     barrier.image = _image;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.levelCount = _mipLevels;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
@@ -1198,7 +1197,7 @@ void HelloTriangleApplication::transitionImageLayoutToTransfer(VkImage _image)
 
     endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer);
 }
-void HelloTriangleApplication::transitionImageLayoutToGraphics(VkImage _image, VkImageAspectFlags _aspectMask, VkImageLayout _newLayout, VkAccessFlags _dstAccessMask, VkPipelineStageFlags _dstStageMask)
+void HelloTriangleApplication::transitionImageLayoutToGraphics(VkImage _image, u32 _mipLevels, VkImageAspectFlags _aspectMask, VkImageLayout _newLayout, VkAccessFlags _dstAccessMask, VkPipelineStageFlags _dstStageMask)
 {
     VkCommandBuffer graphicsCommandBuffer = beginSingleTimeCommands(m_graphicsCommandPool);
 
@@ -1211,7 +1210,7 @@ void HelloTriangleApplication::transitionImageLayoutToGraphics(VkImage _image, V
     barrier.image = _image;
     barrier.subresourceRange.aspectMask = _aspectMask;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.levelCount = _mipLevels;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
@@ -1229,39 +1228,48 @@ void HelloTriangleApplication::transitionImageLayoutToGraphics(VkImage _image, V
 
     endSingleTimeCommands(m_graphicsCommandPool, m_graphicsQueue, graphicsCommandBuffer);
 }
-void HelloTriangleApplication::transitionImageLayoutFromTransferToGraphics(VkImage _image)
+void HelloTriangleApplication::transitionImageLayoutFromTransferToGraphics(VkImage _image, u32 _mipLevels)
 {
+    // To handle image transition between transfer and graphics queues
+    // we need to transition the image layout on transfer queue then graphic queue
+    // with a semaphore to synchronize both queues
+    // Also, we end with a Transfer_Dst layout to be ready to blit (mip levels generation)
+    // Note: we consider old layout to be "undefined" but it should already be "transfer_dst" 
+    // due to staging copy done previously
+    // About transfer/graphics queues transition see: 
+    //  - https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#three-dispatches-first-dispatch-writes-to-one-storage-buffer-second-dispatch-writes-to-a-different-storage-buffer-third-dispatch-reads-both
+    //  - https://stackoverflow.com/questions/67993790/how-do-you-properly-transition-the-image-layout-from-transfer-optimal-to-shader
+
     VkCommandBuffer copyCommandBuffer = beginSingleTimeCommands(m_transferCommandPool);
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcQueueFamilyIndex = m_queueFamilyIndices.transferFamily.value(); // (not sure how this is used by Vulkan, as we need to define a semaphore to sync both queue)
-    barrier.dstQueueFamilyIndex = m_queueFamilyIndices.graphicsFamily.value();
-    barrier.image = _image;
+    barrier.image = m_textureImage;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.levelCount = m_texture.mipLevels;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_NONE;
-    
+
     // Create to semaphore to sync transfer and graphic queue
-    // see: 
-    //  - https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#three-dispatches-first-dispatch-writes-to-one-storage-buffer-second-dispatch-writes-to-a-different-storage-buffer-third-dispatch-reads-both
-    //  - https://stackoverflow.com/questions/67993790/how-do-you-properly-transition-the-image-layout-from-transfer-optimal-to-shader
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     VkSemaphore transferSemaphore;
     VCR(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &transferSemaphore), "Failed to create transfer semaphore.");
-    
-    // Barrier from "Transfer" to "Bottom of pipe" (on transfer queue)
+
+
+    barrier.srcQueueFamilyIndex = m_queueFamilyIndices.transferFamily.value(); // (not sure how this is used by Vulkan, as we need to define a semaphore to sync both queue)
+    barrier.dstQueueFamilyIndex = m_queueFamilyIndices.graphicsFamily.value();
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_NONE;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    // Barrier from undefined layout to transfer dst (on transfer queue)
     vkCmdPipelineBarrier(
         copyCommandBuffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
         0, nullptr,
         0, nullptr,
@@ -1270,19 +1278,21 @@ void HelloTriangleApplication::transitionImageLayoutFromTransferToGraphics(VkIma
 
     // Submit on transfer queue with the semaphore (that will be signaled once the transition is done)
     endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer, 1, &transferSemaphore);
-
-    // Now, on graphics queue, we need to submit transition from "Bottom of pipe" to "fragment shader"
+    
+    // Now, on graphics queue, we need to submit transition from "Bottom of pipe" to "Transfer Dst"
     // with the previous transfer semaphore as waiting
     VkCommandBuffer graphicsCommandBuffer = beginSingleTimeCommands(m_graphicsCommandPool);
 
-    // We re-use the same memory barrier but this time for the graphics queue
-    barrier.srcAccessMask = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    // Barrier from "None" to "Fragment shader" (on graphics queue)
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_NONE;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    // Barrier from undefined layout to transfer dst (on graphics queue)
     vkCmdPipelineBarrier(
         graphicsCommandBuffer,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0,
         0, nullptr,
         0, nullptr,
@@ -1290,9 +1300,9 @@ void HelloTriangleApplication::transitionImageLayoutFromTransferToGraphics(VkIma
     );
 
     // Submit on graphics queue waiting the semaphore to be signaled
-    VkPipelineStageFlags waitStageMask[] = { VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
+    VkPipelineStageFlags waitStageMask[] = { VK_PIPELINE_STAGE_TRANSFER_BIT };
     endSingleTimeCommands(m_graphicsCommandPool, m_graphicsQueue, graphicsCommandBuffer, 0, nullptr, 1, &transferSemaphore, &waitStageMask[0]);
-
+    
     // Clean semaphore
     vkDestroySemaphore(m_logicalDevice, transferSemaphore, nullptr);
 }
@@ -1328,7 +1338,7 @@ void HelloTriangleApplication::copyBufferToImage(VkBuffer _buffer, VkImage _imag
 
     endSingleTimeCommands(m_transferCommandPool, m_transferQueue, copyCommandBuffer);
 }
-void HelloTriangleApplication::createImageView(VkImage _image, VkFormat _format, VkImageAspectFlags _aspectMask, VkImageView& _imageView)
+void HelloTriangleApplication::createImageView(VkImage _image, VkFormat _format, u32 _mipLevels, VkImageAspectFlags _aspectMask, VkImageView& _imageView)
 {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1338,11 +1348,109 @@ void HelloTriangleApplication::createImageView(VkImage _image, VkFormat _format,
     viewInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
     viewInfo.subresourceRange.aspectMask = _aspectMask;
     viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.levelCount = _mipLevels;
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
 
     VCR(vkCreateImageView(m_logicalDevice, &viewInfo, nullptr, &_imageView), "Failed to create image view.");
+}
+void HelloTriangleApplication::generateMipmaps(VkImage _image, VkFormat _format, u32 _texWidth, u32 _texHeight, u32 _mipLevels) 
+{
+    // Check image format support filtering
+    VkFormatProperties formatProperties;
+    vkGetPhysicalDeviceFormatProperties(m_physicalDevice, _format, &formatProperties);
+
+    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) 
+    {
+        throw std::runtime_error("Image format does not support linear filtering.");
+    }
+
+
+    VkCommandBuffer graphicsCommandBuffer = beginSingleTimeCommands(m_graphicsCommandPool);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.image = _image;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = 1;
+
+    i32 mipWidth = _texWidth;
+    i32 mipHeight = _texHeight;
+
+    for (uint32_t i = 1; i < _mipLevels; i++) 
+    {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        // Barrier from transfer dst layout to transfer src (on graphics queue)
+        vkCmdPipelineBarrier(
+            graphicsCommandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+
+        VkImageBlit blit{};
+        blit.srcOffsets[0] = { 0, 0, 0 };
+        blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 1;
+        blit.dstOffsets[0] = { 0, 0, 0 };
+        blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 1;
+
+        // Blit mip level
+        vkCmdBlitImage(
+            graphicsCommandBuffer,
+            _image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            _image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &blit,
+            VK_FILTER_LINEAR);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        // Barrier from transfer src layout to shader read only (on graphics queue)
+        vkCmdPipelineBarrier(
+            graphicsCommandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+
+        if (mipWidth > 1) mipWidth /= 2;
+        if (mipHeight > 1) mipHeight /= 2;
+    }
+
+
+    barrier.subresourceRange.baseMipLevel = _mipLevels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    // Barrier from transfer dst layout to shader read only (on graphics queue)
+    vkCmdPipelineBarrier(graphicsCommandBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier);
+
+    endSingleTimeCommands(m_graphicsCommandPool, m_graphicsQueue, graphicsCommandBuffer);
 }
 #pragma endregion Common
 
@@ -1403,6 +1511,7 @@ void HelloTriangleApplication::createDepthResources()
     createConcurrentImage(
         m_swapchainExtent.width, 
         m_swapchainExtent.height, 
+        1,
         depthFormat, 
         VK_IMAGE_TILING_OPTIMAL, 
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 
@@ -1412,11 +1521,12 @@ void HelloTriangleApplication::createDepthResources()
         m_depthImage, 
         m_depthImageDeviceMemory);
 
-    createImageView(m_depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, m_depthImageView);
+    createImageView(m_depthImage, depthFormat, 1, VK_IMAGE_ASPECT_DEPTH_BIT, m_depthImageView);
 
     // Optional transition (as it will be done in render pass directly)
     transitionImageLayoutToGraphics(
         m_depthImage,
+        1, // mipLevels
         VK_IMAGE_ASPECT_DEPTH_BIT,
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
@@ -1591,53 +1701,55 @@ void HelloTriangleApplication::createUniformBuffers()
 }
 void HelloTriangleApplication::createTextureImage()
 {
-    RawImage rawImage;
-    rawImage.path = TEXTURE_PATH;
-    FileHelper::loadImage(rawImage);
+    m_texture.path = TEXTURE_PATH;
+    FileHelper::loadImage(m_texture);
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
 
     createBuffer(
-        rawImage.size, 
+        m_texture.size, 
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
         stagingBuffer, 
         stagingBufferMemory);
 
     void* data;
-    vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, rawImage.size, 0, &data);
-    memcpy(data, rawImage.data, (u32)rawImage.size);
+    vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, m_texture.size, 0, &data);
+    memcpy(data, m_texture.data, (u32)m_texture.size);
     vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
     
-    FileHelper::unloadImage(rawImage);
+    FileHelper::unloadImage(m_texture);
 
     u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
 
     createConcurrentImage(
-        (u32)rawImage.width,
-        (u32)rawImage.height,
+        (u32)m_texture.width,
+        (u32)m_texture.height,
+        (u32)m_texture.mipLevels,
         VK_FORMAT_R8G8B8A8_SRGB,
         VK_IMAGE_TILING_OPTIMAL, // optimal pixel order for access (otherwise, it would be linear = pixels ordered row per row)
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, // transfer src/dst for mips blit
         2,
         &queueIndices[0],
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         m_textureImage,
         m_textureImageDeviceMemory);
 
-    transitionImageLayoutToTransfer(m_textureImage);
+    transitionImageLayoutToTransfer(m_textureImage, m_texture.mipLevels);
 
-    copyBufferToImage(stagingBuffer, m_textureImage, (u32)rawImage.width, (u32)rawImage.height);
+    copyBufferToImage(stagingBuffer, m_textureImage, (u32)m_texture.width, (u32)m_texture.height);
 
-    transitionImageLayoutFromTransferToGraphics(m_textureImage);
+    transitionImageLayoutFromTransferToGraphics(m_textureImage, m_texture.mipLevels);
+    
+    generateMipmaps(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, (u32)m_texture.width, (u32)m_texture.height, (u32)m_texture.mipLevels);
 
     vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
     vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
 }
 void HelloTriangleApplication::createTextureImageView()
 {
-    createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView);
+    createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, (u32)m_texture.mipLevels, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView);
 }
 
 void HelloTriangleApplication::createTextureSampler()
@@ -1656,9 +1768,9 @@ void HelloTriangleApplication::createTextureSampler()
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
     samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
+    samplerInfo.maxLod = (float)m_texture.mipLevels;
+    samplerInfo.mipLodBias = 0.0f;
 
     VCR(vkCreateSampler(m_logicalDevice, &samplerInfo, nullptr, &m_textureSampler), "Failed to create sampler.")
 }

@@ -36,6 +36,7 @@ void FileHelper::loadImage(RawImage& _image)
     }
 
     _image.size = _image.width * _image.height * 4;
+    _image.mipLevels = (unsigned int)(std::floor(std::log2(std::max(_image.width, _image.height)))) + 1;
     _image.data = (void*)pixels;
 }
 

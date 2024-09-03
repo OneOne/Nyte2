@@ -11,6 +11,7 @@
 #include <GLFW/glfw3.h>
 
 #include "Math.h"
+#include "FileHelper.h"
 //#include "VertexBasic.h" // glm
 #include "VertexModel.h" // glm
 
@@ -99,12 +100,13 @@ private:
     void createConcurrentBuffer(VkDeviceSize _size, VkBufferUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkBuffer& _buffer, VkDeviceMemory& _bufferDeviceMemory);
     void copyBuffer(VkBuffer _srcBuffer, VkBuffer _dstBuffer, VkDeviceSize _size);
     void createImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
-    void createConcurrentImage(u32 _width, u32 _height, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
-    void transitionImageLayoutToTransfer(VkImage _image);
-    void transitionImageLayoutToGraphics(VkImage _image, VkImageAspectFlags _aspectMask, VkImageLayout _newLayout, VkAccessFlags _dstAccessMask, VkPipelineStageFlags _dstStageMask);
-    void transitionImageLayoutFromTransferToGraphics(VkImage _image);
+    void createConcurrentImage(u32 _width, u32 _height, u32 _mipLevels, VkFormat _format, VkImageTiling _tiling, VkImageUsageFlags _usage, u32 _sharedQueueCount, u32* _sharedQueueIndices, VkMemoryPropertyFlags _properties, VkImage& _image, VkDeviceMemory& _imageDeviceMemory);
+    void transitionImageLayoutToTransfer(VkImage _image, u32 _mipLevels);
+    void transitionImageLayoutToGraphics(VkImage _image, u32 _mipLevels, VkImageAspectFlags _aspectMask, VkImageLayout _newLayout, VkAccessFlags _dstAccessMask, VkPipelineStageFlags _dstStageMask);
+    void transitionImageLayoutFromTransferToGraphics(VkImage _image, u32 _mipLevels);
     void copyBufferToImage(VkBuffer _buffer, VkImage _image, u32 _width, u32 _height);
-    void createImageView(VkImage _image, VkFormat _format, VkImageAspectFlags _aspectMask, VkImageView& _imageView);
+    void createImageView(VkImage _image, VkFormat _format, u32 _mipLevels, VkImageAspectFlags _aspectMask, VkImageView& _imageView);
+    void generateMipmaps(VkImage _image, VkFormat _format, u32 _texWidth, u32 _texHeight, u32 _mipLevels);
 #pragma endregion Common
 
     void createCommandPools();
@@ -191,6 +193,7 @@ private:
     VkDeviceMemory m_indexBufferDeviceMemory;
     std::vector<VkBuffer> m_uniformBuffers;
     std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
+    RawImage m_texture;
     VkImage m_textureImage;
     VkDeviceMemory m_textureImageDeviceMemory;
     VkImageView m_textureImageView;
