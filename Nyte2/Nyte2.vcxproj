@@ -154,16 +154,17 @@
   <ItemGroup>
     <ClCompile Include="FileHelper.cpp" />
     <ClCompile Include="HelloTriangleApplication.cpp" />
+    <ClCompile Include="main.cpp" />
     <ClCompile Include="mainOld.cpp" />
-    <ClCompile Include="VulkanHelper.cpp" />
+    <ClCompile Include="Nyte\Engine.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileHelper.h" />
     <ClInclude Include="HelloTriangleApplication.h" />
     <ClInclude Include="Math.h" />
+    <ClInclude Include="Nyte\Engine.h" />
     <ClInclude Include="VertexBasic.h" />
     <ClInclude Include="VertexModel.h" />
-    <ClInclude Include="VulkanHelper.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
