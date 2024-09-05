@@ -31,6 +31,7 @@ private:
     void mainLoop();
 
     static void framebufferSizeChanged(GLFWwindow* window, int width, int height);
+    void resizeWindow(int _width, int _height);
 
 private:
     GLFWwindow* m_window = nullptr;

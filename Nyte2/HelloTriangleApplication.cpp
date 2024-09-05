@@ -24,8 +24,8 @@ void HelloTriangleApplication::run()
     mainLoop();
 
     m_engine.deinit();
-    deinitWindow();
     m_engine.destroyInstance();
+    deinitWindow();
 }
 
 void HelloTriangleApplication::initWindow()
@@ -71,12 +71,6 @@ vector<const char*> HelloTriangleApplication::getGLFWRequiredExtensions()
     return extensions;
 }
 
-void HelloTriangleApplication::framebufferSizeChanged(GLFWwindow* _window, int _width, int _height)
-{
-    HelloTriangleApplication* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(_window));
-    app->m_engine.resizeWindow(_width, _height);
-}
-
 void HelloTriangleApplication::mainLoop() 
 {
     while (!glfwWindowShouldClose(m_window)) 
@@ -86,4 +80,27 @@ void HelloTriangleApplication::mainLoop()
     }
 
     m_engine.idle();
+}
+
+
+void HelloTriangleApplication::framebufferSizeChanged(GLFWwindow* _window, int _width, int _height)
+{
+    HelloTriangleApplication* app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(_window));
+    app->resizeWindow(_width, _height);
+}
+void HelloTriangleApplication::resizeWindow(int _width, int _height)
+{
+    if (_width == 0 || _height == 0)
+    {
+        glfwGetFramebufferSize(m_window, &_width, &_height);
+
+        while (_width == 0 || _height == 0) 
+        {
+            glfwGetFramebufferSize(m_window, &_width, &_height);
+            glfwWaitEvents();
+        }
+    }
+    m_windowWidth = _width;
+    m_windowHeight = _height;
+    m_engine.resizeWindow(_width, _height);
 }

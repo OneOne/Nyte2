@@ -145,6 +145,8 @@ void Engine::deinit()
 #if _DEBUG
     destroyDebugUtilsMessengerEXT(m_instance, m_callback, nullptr);
 #endif
+
+    vkDestroySurfaceKHR(m_instance, *m_surface, nullptr);
 }
 
 void Engine::drawFrame()
