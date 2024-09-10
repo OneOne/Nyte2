@@ -2,21 +2,15 @@
 @echo ------------------------------------------
 @echo Vulkan SDK path: %Vulkan_SDK%
 @echo ------------------------------------------
-@echo Compiling basic.glsl vertex stage
-%Vulkan_SDK%/Bin/glslc.exe basic.glsl -o vertexshader.spv -D_VERTEX_SHADER=1
-@echo ------------------------------------------
-@echo Compiling basic.glsl fragment stage
-%Vulkan_SDK%/Bin/glslc.exe basic.glsl -o fragmentshader.spv -D_FRAGMENT_SHADER=1
-@echo ------------------------------------------
-@echo Compiling model.glsl vertex stage
-%Vulkan_SDK%/Bin/glslc.exe model.glsl -o model_vs.spv -D_VERTEX_SHADER=1
-@echo ------------------------------------------
-@echo Compiling model.glsl fragment stage
-%Vulkan_SDK%/Bin/glslc.exe model.glsl -o model_fs.spv -D_FRAGMENT_SHADER=1
 
-
-
-
+for %%f in (*.glsl) do (
+    @echo Compiling %%~nf.glsl vertex stage
+    %Vulkan_SDK%/Bin/glslc.exe %%~nf.glsl -o %%~nf_vs.spv -D_VERTEX_SHADER=1
+    @echo ------------------------------------------
+    @echo Compiling %%~nf.glsl fragment stage
+    %Vulkan_SDK%/Bin/glslc.exe %%~nf.glsl -o %%~nf_fs.spv -D_FRAGMENT_SHADER=1
+    @echo ------------------------------------------
+)
 
 
 

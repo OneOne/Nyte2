@@ -8,7 +8,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include "Nyte/Engine.h"
+#include "Engine.h"
 
 // class forward decl
 struct GLFWwindow;
