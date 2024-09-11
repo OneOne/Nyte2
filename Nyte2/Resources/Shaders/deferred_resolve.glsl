@@ -51,6 +51,24 @@ vec4 resolve(sampler2DMS _tex, vec2 _UV)
 
 void main() 
 {
-    outColor = resolve(colorSampler, inUVs); 
+    vec2 splitScreenUV = inUVs * 2.0f;
+    vec2 textureUV = mod(inUVs * 2.0f, 1.0f);
+    if(splitScreenUV.x<1.0f && splitScreenUV.y<1.0f)
+    {
+        outColor = resolve(colorSampler, textureUV); 
+    }
+    else if(splitScreenUV.x>1.0f && splitScreenUV.y<1.0f)
+    {
+        outColor = resolve(normalSampler, textureUV); 
+    }
+    else if(splitScreenUV.x<1.0f && splitScreenUV.y>1.0f)
+    {
+        outColor = resolve(specGlossSampler, textureUV); 
+    }
+    else
+    {
+        // computePBR
+        outColor = vec4(0);
+    }
 }
 #endif
