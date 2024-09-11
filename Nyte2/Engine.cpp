@@ -195,7 +195,7 @@ void Engine::drawFrame()
         submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrame]; // wait image is available
 
         submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &m_gbufferSemaphores.m_semaphores[imageIndex]; // signal offscreen semaphore
+        submitInfo.pSignalSemaphores = &m_gbufferSemaphores.m_semaphores[m_currentFrame]; // signal offscreen semaphore
 
         VCR(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "Failed to submit gbuffer commands to queue.");
     }
@@ -206,7 +206,7 @@ void Engine::drawFrame()
         submitInfo.pCommandBuffers = &m_deferredCmds.m_commandBuffers[imageIndex];
 
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &m_gbufferSemaphores.m_semaphores[imageIndex]; // wait gbuffer is rendered
+        submitInfo.pWaitSemaphores = &m_gbufferSemaphores.m_semaphores[m_currentFrame]; // wait gbuffer is rendered
 
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrame]; // signal image has been rendered once command buffer is executed
@@ -214,7 +214,7 @@ void Engine::drawFrame()
         // Reset in-flight fence for current frame just before submitting to graphics queue
         vkResetFences(m_logicalDevice, 1, &m_inFlightFences[m_currentFrame]);
 
-        VCR(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "Failed to submit gbuffer commands to queue.");
+        VCR(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrame]), "Failed to submit gbuffer commands to queue.");
     }
 
         //VkSubmitInfo submitInfo{};
@@ -1728,7 +1728,7 @@ void Engine::createOffscreenGBuffer()
     }
 
     // Create Semaphore to sync offscreen gbuffer and deferred
-    m_gbufferSemaphores.createSemaphores(m_logicalDevice, swapchainSize);
+    m_gbufferSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
 }
 
 void Engine::createDeferredPipepline()
@@ -1737,7 +1737,7 @@ void Engine::createDeferredPipepline()
     VkAttachmentDescription colorResolveAttachment{};
     colorResolveAttachment.format = m_swapchainImageFormat;
     colorResolveAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorResolveAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorResolveAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorResolveAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorResolveAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorResolveAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -1804,11 +1804,12 @@ void Engine::createDeferredPipepline()
     Pipeline deferredPipeline;
     deferredPipeline.m_stages = { vertexShader, fragmentShader };
     deferredPipeline.m_vertexDescription = emptyVertexDescription;
-    deferredPipeline.m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    deferredPipeline.m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP; // as we will render only a quad
     deferredPipeline.m_extent = m_swapchainExtent;
     deferredPipeline.m_sampleCount = VK_SAMPLE_COUNT_1_BIT; // m_msaaSamples;
     deferredPipeline.m_renderPass = deferredRenderPass;
     deferredPipeline.m_pipelineLayout = pipelineLayout;
+    deferredPipeline.m_depthTestEnable = false;
     deferredPipeline.createPipeline(m_logicalDevice);
 
     // Descriptor Sets

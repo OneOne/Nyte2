@@ -12,7 +12,8 @@ out gl_PerVertex {
 
 void main() 
 {
-	outUVs = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);
+	outUVs = vec2(gl_VertexIndex & 1, gl_VertexIndex >> 1);
+    outUVs.y = 1.0f - outUVs.y;
 	gl_Position = vec4(outUVs * 2.0f - 1.0f, 0.0f, 1.0f);
 }
 #endif
@@ -22,17 +23,34 @@ void main()
 #pragma shader_stage(fragment)
 
 
-layout(set = 0, binding = 1) uniform sampler2DMS colorSampler;
-layout(set = 0, binding = 2) uniform sampler2DMS normalSampler;
-layout(set = 0, binding = 3) uniform sampler2DMS specGlossSampler;
+layout(set = 0, binding = 0) uniform sampler2DMS colorSampler;
+layout(set = 0, binding = 1) uniform sampler2DMS normalSampler;
+layout(set = 0, binding = 2) uniform sampler2DMS specGlossSampler;
 
 layout(location = 0) in vec2 inUVs;
 
 layout(location = 0) out vec4 outColor;
 
+layout (constant_id = 0) const int NUM_SAMPLES = 8;
+
+// Manual resolve for MSAA samples 
+vec4 resolve(sampler2DMS _tex, vec2 _UV)
+{
+    ivec2 texSize = textureSize(_tex);
+	ivec2 iUVs = ivec2(_UV * texSize);
+
+	vec4 result = vec4(0.0);	   
+	for (int i = 0; i < NUM_SAMPLES; i++)
+	{
+		vec4 val = texelFetch(_tex, iUVs, i); 
+		result += val;
+	}    
+	// Average resolved samples
+	return result / float(NUM_SAMPLES);
+}
+
 void main() 
 {
-    outColor = texelFetch(colorSampler, ivec2(inUVs), 0); 
-    //outColor = resolve(colorSampler, inUVs);
+    outColor = resolve(colorSampler, inUVs); 
 }
 #endif

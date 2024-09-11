@@ -44,7 +44,7 @@ layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec4 outSpecGloss;
 
 void main() {
-    outColor = vec4(0.0, 1.0, 0.0, 1.0);//texture(colorSampler, inTexCoords);
+    outColor = texture(colorSampler, inTexCoords);
     outNormal = vec4(1.0, 0.0, 0.0, 1.0);
     outSpecGloss = vec4(1.0, 1.0, 0.0, 1.0);
 }
