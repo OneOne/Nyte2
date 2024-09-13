@@ -71,7 +71,7 @@ namespace Nyte
 {
     class Engine;
 
-    struct QueueFamilyIndices 
+    struct QueueFamilyIndices
     {
         std::optional<u32> graphicsFamily;
         std::optional<u32> presentFamily;
@@ -82,7 +82,7 @@ namespace Nyte
             return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
         }
     };
-    struct SwapchainSupportDetails 
+    struct SwapchainSupportDetails
     {
         VkSurfaceCapabilitiesKHR capabilities;
         std::vector<VkSurfaceFormatKHR> formats;
@@ -106,7 +106,7 @@ namespace Nyte
         VkExtent2D m_extent;
         u32 m_mipLevels;
         VkSampleCountFlagBits m_sampleCount;
-        
+
         VkImageUsageFlags m_usage;
         VkImageAspectFlags m_aspectMask;
         VkClearValue m_clearValue;
@@ -210,11 +210,11 @@ namespace Nyte
             VkAttachmentReference attachmentReference;
             attachmentReference.attachment = _attachmentIndex; // layout(location = _attachmentIndex)
             attachmentReference.layout = _layout;
-            
+
             return attachmentReference;
         }
     };
-    
+
     struct RenderPass
     {
         VkRenderPass m_renderPass;
@@ -274,7 +274,7 @@ namespace Nyte
         }
     };
 
-    struct Framebuffer 
+    struct Framebuffer
     {
         VkFramebuffer m_framebuffer;
 
@@ -320,7 +320,7 @@ namespace Nyte
             stage.m_stageFlag = VK_SHADER_STAGE_FRAGMENT_BIT;
             return stage;
         }
-        
+
         inline void createStage(VkDevice _device)
         {
             std::vector<octet> code = FileHelper::readFile(m_path.c_str());
@@ -334,6 +334,7 @@ namespace Nyte
             VCR(vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule), "Failed to create shader module.");
 
             // Setup shader stage
+            m_stageInfo = {};
             m_stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
             m_stageInfo.pNext = nullptr;
             m_stageInfo.stage = m_stageFlag;
@@ -342,7 +343,7 @@ namespace Nyte
             m_stageInfo.pSpecializationInfo = nullptr;
         }
     };
-    
+
     struct InputAttribut
     {
         VkFormat m_format;
@@ -403,7 +404,7 @@ namespace Nyte
             binding.descriptorCount = 1;
             binding.stageFlags = _stageFlags;
             binding.pImmutableSamplers = nullptr; // Optional
-            
+
             m_bindings.push_back(binding);
         }
         inline void addSamplerBinding()
@@ -414,7 +415,7 @@ namespace Nyte
             binding.descriptorCount = 1;
             binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
             binding.pImmutableSamplers = nullptr; // Optional
-            
+
             m_bindings.push_back(binding);
         }
 
@@ -428,7 +429,7 @@ namespace Nyte
             VCR(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &m_descriptorSetLayout), "Faild to create descriptor set layout.");
         }
     };
-    
+
     struct DescriptorSets
     {
         struct WriteInfo
@@ -458,7 +459,7 @@ namespace Nyte
             descriptorWrite.dstArrayElement = 0;
             descriptorWrite.descriptorType = _descriptorType;
             descriptorWrite.descriptorCount = 1;
-            
+
             m_writeDescriptorSets.push_back(descriptorWrite);
         }
         inline void addWriteImageDescriptorSet(VkDescriptorSet _dstSet, u32 _bindingIndex, VkDescriptorType _descriptorType, VkSampler _sampler, VkImageView _imageView, VkImageLayout _imageLayout)
@@ -475,10 +476,10 @@ namespace Nyte
             descriptorWrite.dstArrayElement = 0;
             descriptorWrite.descriptorType = _descriptorType;
             descriptorWrite.descriptorCount = 1;
-            
+
             m_writeDescriptorSets.push_back(descriptorWrite);
         }
-        
+
         inline void allocateDescriptorSets(VkDevice _device, u32 _allocateCount)
         {
             std::vector<VkDescriptorPoolSize> poolSizes{};
@@ -511,14 +512,14 @@ namespace Nyte
         }
         inline void updateDescriptorSets(VkDevice _device)
         {
-            for (u32 i=0; i<m_writeDescriptorSets.size(); ++i)
+            for (u32 i = 0; i < m_writeDescriptorSets.size(); ++i)
             {
                 VkWriteDescriptorSet& writeDescriptorSet = m_writeDescriptorSets[i];
                 WriteInfo& info = m_infos[i];
 
                 if (info.m_bufferInfo.has_value())
                     writeDescriptorSet.pBufferInfo = &info.m_bufferInfo.value();
-                else if(info.m_imageInfo.has_value())
+                else if (info.m_imageInfo.has_value())
                     writeDescriptorSet.pImageInfo = &info.m_imageInfo.value();
             }
 
@@ -571,7 +572,7 @@ namespace Nyte
 
             VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
             vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-            if(m_vertexDescription.m_inputAttributeDescriptions.size() > 0)
+            if (m_vertexDescription.m_inputAttributeDescriptions.size() > 0)
             {
                 vertexInputInfo.vertexBindingDescriptionCount = 1;
                 vertexInputInfo.pVertexBindingDescriptions = &m_vertexDescription.m_bindingDescription;
@@ -609,7 +610,7 @@ namespace Nyte
             rasterizer.rasterizerDiscardEnable = VK_FALSE;
             rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // fill, edges or points
             rasterizer.lineWidth = 1.0f; // default value (otherwise require "wideLines" extension)
-            rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+            rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //VK_CULL_MODE_FRONT_AND_BACK; //VK_CULL_MODE_BACK_BIT;
             rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // careful, we use ccw here due to glm->vulkan conversion in projection matrix
             rasterizer.depthBiasEnable = VK_FALSE;
             rasterizer.depthBiasConstantFactor = 0.0f; // Optional
@@ -819,10 +820,10 @@ namespace Nyte
         void recreateSwapchain();
 #pragma endregion Swapchain
 
-        void createRenderPass();
-        VkShaderModule createShaderModule(const std::vector<char>& code);
-        void createDescriptorSetLayout();
-        void createGraphicsPipeline();
+        //void createRenderPass();
+        //VkShaderModule createShaderModule(const std::vector<char>& code);
+        //void createDescriptorSetLayout();
+        //void createGraphicsPipeline();
 
 #pragma region Common
         VkCommandBuffer beginSingleTimeCommands(VkCommandPool _commandPool);

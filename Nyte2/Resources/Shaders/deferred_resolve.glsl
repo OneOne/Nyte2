@@ -68,7 +68,7 @@ void main()
     else
     {
         // computePBR
-        outColor = vec4(0);
+        outColor = vec4(1,1,1,1);
     }
 }
 #endif

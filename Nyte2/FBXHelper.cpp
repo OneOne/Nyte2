@@ -43,8 +43,8 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
         int indexCount = positions.count;
         for (int idx = 0; idx < indexCount; ++idx)
         {
-            int index = positions.indices[idx];
-            if (index >= fbxMesh.m_vertices.size())
+            //int index = positions.indices[idx];
+            //if (index >= fbxMesh.m_vertices.size())
             {
                 FBXVertex vertex;
                 vertex.position = positions.get(idx);
@@ -60,7 +60,7 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
                 );
             }
 
-            fbxMesh.m_indices.push_back(index);
+            fbxMesh.m_indices.push_back((u32)fbxMesh.m_indices.size());
         }
         
 

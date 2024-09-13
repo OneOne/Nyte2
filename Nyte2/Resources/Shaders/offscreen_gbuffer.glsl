@@ -25,7 +25,7 @@ out gl_PerVertex {
 void main() {
     gl_Position = ubo_MVP.proj * ubo_MVP.view * ubo_MVP.model * vec4(inPosition, 1.0);
     outNormal = inNormal;
-    outTexCoords = inTexCoords;
+    outTexCoords = vec2(inTexCoords.x, 1.0f-inTexCoords.y);
 }
 #endif
 
