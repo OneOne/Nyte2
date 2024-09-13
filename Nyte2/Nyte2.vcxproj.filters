@@ -9,6 +9,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="openFBX">
+      <UniqueIdentifier>{20679d28-0200-45a8-ad3a-70a81f99626a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Common.h">
@@ -29,6 +32,13 @@
     <ClInclude Include="VertexModel.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\Libraries\openFBX\libdeflate.h">
+      <Filter>openFBX</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Libraries\openFBX\ofbx.h">
+      <Filter>openFBX</Filter>
+    </ClInclude>
+    <ClInclude Include="FBXHelper.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine.cpp">
@@ -38,6 +48,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HelloTriangleApplication.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Libraries\openFBX\libdeflate.c">
+      <Filter>openFBX</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Libraries\openFBX\ofbx.cpp">
+      <Filter>openFBX</Filter>
+    </ClCompile>
+    <ClCompile Include="FBXHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

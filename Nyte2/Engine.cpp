@@ -9,6 +9,7 @@
 #include <limits>
 #include <algorithm>
 #include <unordered_map>
+#include "FBXHelper.h"
 
 using namespace std;
 
@@ -1959,40 +1960,66 @@ VkFormat Engine::findDepthFormat()
 
 void Engine::loadModel()
 {
-    RawObj model;
-    model.path = MODEL_PATH;
+    //RawObj model;
+    //model.path = MODEL_PATH;
+    //FileHelper::loadModel(model);
+    //unordered_map<Vertex, u32> verticesMap{}; // <Vertex, vertexIndex>
+    //
+    //for (const tinyobj::shape_t& shape : model.shapes)
+    //{
+    //    for (const tinyobj::index_t& index : shape.mesh.indices)
+    //    {
+    //        Vertex vertex{};
+    //        vertex.pos.x = model.attrib.vertices[index.vertex_index * 3 + 0];
+    //        vertex.pos.y = model.attrib.vertices[index.vertex_index * 3 + 1];
+    //        vertex.pos.z = model.attrib.vertices[index.vertex_index * 3 + 2];
+    //
+    //        vertex.normal.x = model.attrib.normals[index.normal_index * 3 + 0];
+    //        vertex.normal.y = model.attrib.normals[index.normal_index * 3 + 1];
+    //        vertex.normal.z = model.attrib.normals[index.normal_index * 3 + 2];
+    //
+    //        vertex.texCoords.x = model.attrib.texcoords[index.texcoord_index * 2 + 0];
+    //        vertex.texCoords.y = 1.0f - model.attrib.texcoords[index.texcoord_index * 2 + 1]; // obj -> vulkan tex coords convertion
+    //
+    //        auto it = verticesMap.find(vertex);
+    //        if (it == verticesMap.end())
+    //        {
+    //            u32 vertexIndex = (u32)m_vertices.size();
+    //            verticesMap[vertex] = vertexIndex;
+    //            m_vertices.push_back(vertex);
+    //            m_indices.push_back(vertexIndex);
+    //        }
+    //        else
+    //            m_indices.push_back(it->second);
+    //    }
+    //}
 
-    FileHelper::loadModel(model);
+
+    FBXScene fbx;
+    fbx.filePath = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_LOD0.fbx";
+    FBXHelper::loadFBX(fbx);
 
     unordered_map<Vertex, u32> verticesMap{}; // <Vertex, vertexIndex>
 
-    for (const tinyobj::shape_t& shape : model.shapes)
+    for (const FBXMesh& mesh : fbx.meshes)
     {
-        for (const tinyobj::index_t& index : shape.mesh.indices)
+        for (FBXVertex v : mesh.m_vertices)
         {
             Vertex vertex{};
-            vertex.pos.x = model.attrib.vertices[index.vertex_index * 3 + 0];
-            vertex.pos.y = model.attrib.vertices[index.vertex_index * 3 + 1];
-            vertex.pos.z = model.attrib.vertices[index.vertex_index * 3 + 2];
+            vertex.pos.x = v.position.x;
+            vertex.pos.y = v.position.y;
+            vertex.pos.z = v.position.z;
 
-            vertex.normal.x = model.attrib.normals[index.normal_index * 3 + 0];
-            vertex.normal.y = model.attrib.normals[index.normal_index * 3 + 1];
-            vertex.normal.z = model.attrib.normals[index.normal_index * 3 + 2];
+            vertex.normal.x = v.normal.x;
+            vertex.normal.y = v.normal.y;
+            vertex.normal.z = v.normal.z;
 
-            vertex.texCoords.x = model.attrib.texcoords[index.texcoord_index * 2 + 0];
-            vertex.texCoords.y = 1.0f - model.attrib.texcoords[index.texcoord_index * 2 + 1]; // obj -> vulkan tex coords convertion
+            vertex.texCoords.x = v.uv.x;
+            vertex.texCoords.y = v.uv.y;
 
-            auto it = verticesMap.find(vertex);
-            if (it == verticesMap.end())
-            {
-                u32 vertexIndex = (u32)m_vertices.size();
-                verticesMap[vertex] = vertexIndex;
-                m_vertices.push_back(vertex);
-                m_indices.push_back(vertexIndex);
-            }
-            else
-                m_indices.push_back(it->second);
+            m_vertices.push_back(vertex);
         }
+        m_indices.insert(m_indices.end(), mesh.m_indices.begin(), mesh.m_indices.end());
     }
 }
 
@@ -2103,7 +2130,8 @@ void Engine::createUniformBuffers()
 }
 void Engine::createTextureImage()
 {
-    m_texture.path = TEXTURE_PATH;
+    //m_texture.path = TEXTURE_PATH;
+    m_texture.path = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Albedo.jpg";
     FileHelper::loadImage(m_texture);
 
     VkBuffer stagingBuffer;

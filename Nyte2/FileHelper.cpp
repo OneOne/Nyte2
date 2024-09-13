@@ -9,13 +9,15 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
-std::vector<octet> FileHelper::readFile(const std::string& filePath)
+#include "ofbx.h"
+
+std::vector<octet> FileHelper::readFile(const std::string& _filePath)
 {
-    std::ifstream file(filePath, std::ios::ate | std::ios::binary); // open as binary, placing cursor at the end
+    std::ifstream file(_filePath, std::ios::ate | std::ios::binary); // open as binary, placing cursor at the end
 
     if (!file.is_open()) 
     {
-        throw std::runtime_error(std::string{ "Failed to open file: " } + filePath);
+        throw std::runtime_error(std::string{ "Failed to open file: " } + _filePath);
     }
 
     size_t fileSize = (size_t)file.tellg(); // retrieve cursor position (here the end and therefore file size)
@@ -60,3 +62,4 @@ void FileHelper::loadModel(RawObj& _model)
         throw std::runtime_error(warn + err);
     }
 }
+

@@ -29,7 +29,7 @@ struct RawObj
 class FileHelper
 {
 public:
-    static std::vector<octet> readFile(const std::string& filePath);
+    static std::vector<octet> readFile(const std::string& _filePath);
     static void loadImage(RawImage& _image);
     static void unloadImage(RawImage& _image);
     
