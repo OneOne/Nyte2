@@ -189,6 +189,12 @@ namespace Nyte
 
             VCR(vkCreateImageView(_device, &viewInfo, nullptr, &m_imageView), "Failed to create image view.");
         }
+        inline void destroyImageAttachment(VkDevice _device)
+        {
+            vkDestroyImageView(_device, m_imageView, nullptr);
+            vkFreeMemory(_device, m_imageDeviceMemory, nullptr);
+            vkDestroyImage(_device, m_image, nullptr);
+        }
 
         inline VkAttachmentDescription getAttachmentDescription(VkImageLayout _layout)
         {
@@ -247,6 +253,10 @@ namespace Nyte
 
             VCR(vkCreateRenderPass(_device, &renderPassInfo, nullptr, &m_renderPass), "Failed to create render pass.");
         }
+        inline void destroyRenderPass(VkDevice _device)
+        {
+            vkDestroyRenderPass(_device, m_renderPass, nullptr);
+        }
 
         inline static VkSubpassDependency colorDependency()
         {
@@ -299,11 +309,15 @@ namespace Nyte
 
             VCR(vkCreateFramebuffer(_device, &framebufferInfo, nullptr, &m_framebuffer), "Failed to create framebuffer.");
         }
+        inline void destroyFramebuffer(VkDevice _device)
+        {
+            vkDestroyFramebuffer(_device, m_framebuffer, nullptr);
+        }
     };
 
     struct ShaderStage
     {
-        VkPipelineShaderStageCreateInfo m_stageInfo;
+        VkShaderModule m_shaderModule;
 
         std::string m_path;
         VkShaderStageFlagBits m_stageFlag;
@@ -321,7 +335,7 @@ namespace Nyte
             return stage;
         }
 
-        inline void createStage(VkDevice _device)
+        inline void createShader(VkDevice _device)
         {
             std::vector<octet> code = FileHelper::readFile(m_path.c_str());
 
@@ -330,17 +344,24 @@ namespace Nyte
             createInfo.codeSize = code.size();
             createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
-            VkShaderModule shaderModule;
-            VCR(vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule), "Failed to create shader module.");
 
-            // Setup shader stage
-            m_stageInfo = {};
-            m_stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-            m_stageInfo.pNext = nullptr;
-            m_stageInfo.stage = m_stageFlag;
-            m_stageInfo.module = shaderModule;
-            m_stageInfo.pName = "main";
-            m_stageInfo.pSpecializationInfo = nullptr;
+            VCR(vkCreateShaderModule(_device, &createInfo, nullptr, &m_shaderModule), "Failed to create shader module.");
+        }
+        inline void destroyShader(VkDevice _device)
+        {
+            vkDestroyShaderModule(_device, m_shaderModule, nullptr);
+        }
+
+        inline VkPipelineShaderStageCreateInfo getStageCreateInfo() const
+        {
+            VkPipelineShaderStageCreateInfo stageInfo = {};
+            stageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            stageInfo.pNext = nullptr;
+            stageInfo.stage = m_stageFlag;
+            stageInfo.module = m_shaderModule;
+            stageInfo.pName = "main";
+            stageInfo.pSpecializationInfo = nullptr;
+            return stageInfo;
         }
     };
 
@@ -428,8 +449,11 @@ namespace Nyte
 
             VCR(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &m_descriptorSetLayout), "Faild to create descriptor set layout.");
         }
+        inline void destroyDescriptorSetLayout(VkDevice _device)
+        {
+            vkDestroyDescriptorSetLayout(_device, m_descriptorSetLayout, nullptr);
+        }
     };
-
     struct DescriptorSets
     {
         struct WriteInfo
@@ -494,6 +518,8 @@ namespace Nyte
             poolInfo.pPoolSizes = poolSizes.data();
             poolInfo.maxSets = _allocateCount;
 
+            //VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
+
             VCR(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &m_descriptorPool), "Failed to create descriptor pool.");
 
 
@@ -509,6 +535,11 @@ namespace Nyte
 
             VkResult r = vkAllocateDescriptorSets(_device, &allocInfo, m_descriptorSets.data());
             VCR(r, "Failed to create descriptor sets.");
+        }
+        inline void freeDescriptorSets(VkDevice _device)
+        {
+            //vkFreeDescriptorSets(...m_descriptorSets...) is already done when destroying descriptor pool
+            vkDestroyDescriptorPool(_device, m_descriptorPool, nullptr);
         }
         inline void updateDescriptorSets(VkDevice _device)
         {
@@ -528,6 +559,7 @@ namespace Nyte
             m_infos.clear();
         }
     };
+
     struct PipelineLayout
     {
         VkPipelineLayout m_pipelineLayout;
@@ -549,12 +581,16 @@ namespace Nyte
 
             VCR(vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout), "Failed to create pipeline layout.");
         }
+        inline void destroyPipelineLayout(VkDevice _device)
+        {
+            vkDestroyPipelineLayout(_device, m_pipelineLayout, nullptr);
+        }
     };
     struct Pipeline
     {
         VkPipeline m_pipeline;
 
-        std::vector<ShaderStage> m_stages;
+        std::vector<ShaderStage> m_shaders;
         VertexDescription m_vertexDescription;
         VkPrimitiveTopology m_topology;
         VkExtent2D m_extent;
@@ -566,8 +602,8 @@ namespace Nyte
         inline void createPipeline(VkDevice _device)
         {
             std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-            for (const ShaderStage& stage : m_stages)
-                shaderStages.push_back(stage.m_stageInfo);
+            for (const ShaderStage& shader : m_shaders)
+                shaderStages.push_back(shader.getStageCreateInfo());
 
 
             VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -692,6 +728,10 @@ namespace Nyte
 
             VCR(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline), "Failed to create graphics pipeline(s).");
         }
+        inline void destroyPipeline(VkDevice _device)
+        {
+            vkDestroyPipeline(_device, m_pipeline, nullptr);
+        }
     };
 
     struct CommandBuffers
@@ -712,6 +752,10 @@ namespace Nyte
             allocInfo.commandBufferCount = _count;
 
             VCR(vkAllocateCommandBuffers(_device, &allocInfo, m_commandBuffers.data()), "Failed to allocate command buffers.");
+        }
+        inline void freeCommands(VkDevice _device, VkCommandPool _commandPool)
+        {
+            vkFreeCommandBuffers(_device, _commandPool, (u32)m_commandBuffers.size(), m_commandBuffers.data());
         }
 
         inline void beginPass(u32 _index)
@@ -743,7 +787,7 @@ namespace Nyte
             VCR(vkEndCommandBuffer(m_commandBuffers[_index]), "Failed to end command buffer.");
         }
 
-        VkCommandBuffer operator[](const u32 _index)
+        VkCommandBuffer& operator[](const u32 _index)
         {
             return m_commandBuffers[_index];
         }
@@ -763,6 +807,16 @@ namespace Nyte
                 VCR(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &m_semaphores[i]), "Failed to create semaphore");
             }
         }
+        inline void destroySemaphores(VkDevice _device)
+        {
+            for(VkSemaphore& semaphore : m_semaphores)
+                vkDestroySemaphore(_device, semaphore, nullptr);
+        }
+
+        VkSemaphore& operator[](const u32 _index)
+        {
+            return m_semaphores[_index];
+        }
     };
 
     struct GBuffer
@@ -771,6 +825,37 @@ namespace Nyte
         ImageAttachment m_normalAttachment;
         ImageAttachment m_specGlossAttachment;
         ImageAttachment m_depthAttachment;
+
+        RenderPass m_renderPass;
+        Framebuffer m_framebuffer;
+
+        ShaderStage m_vertexShader;
+        ShaderStage m_fragmentShader;
+
+        DescriptorSetLayout m_descriptorSetLayout;
+        DescriptorSets m_descriptorSets;
+
+        PipelineLayout m_pipelineLayout;
+        Pipeline m_pipeline;
+
+        CommandBuffers m_cmdBuffers;
+    };
+
+    struct DeferredResolve
+    {
+        RenderPass m_renderPass;
+        std::vector<Framebuffer> m_framebuffers;
+
+        ShaderStage m_vertexShader;
+        ShaderStage m_fragmentShader;
+
+        DescriptorSetLayout m_descriptorSetLayout;
+        DescriptorSets m_descriptorSets;
+
+        PipelineLayout m_pipelineLayout;
+        Pipeline m_pipeline;
+
+        CommandBuffers m_cmdBuffers;
     };
 
 
@@ -843,7 +928,10 @@ namespace Nyte
         void createCommandPools();
 
         void createOffscreenGBuffer();
+        void destroyOffscreenGBuffer();
+
         void createDeferredPipepline();
+        void destroyDeferredPipeline();
         //void createColorResources();
 
 
@@ -869,7 +957,7 @@ namespace Nyte
         //void createCommandBuffers();
 
         void createSemaphoresAndFences();
-
+        void destroySemaphoresAndFences();
 
 
         void updateUniformBuffer(u32 _currentImage);
@@ -900,11 +988,9 @@ namespace Nyte
 
 
         GBuffer m_gbuffer;
-        CommandBuffers m_gbufferCmds;
-        Semaphores m_gbufferSemaphores;
+        DeferredResolve m_deferred;
 
-        std::vector<Framebuffer> m_deferredFramebuffers;
-        CommandBuffers m_deferredCmds;
+        Semaphores m_gbufferSemaphores;
 
 
 
@@ -953,8 +1039,8 @@ namespace Nyte
 
         // Note: Fences synchronize c++ calls with gpu operations
         //       Semaphores synchronize gpu operations with one another
-        std::vector<VkSemaphore> m_imageAvailableSemaphores;
-        std::vector<VkSemaphore> m_renderFinishedSemaphores;
+        Semaphores m_imageAvailableSemaphores;
+        Semaphores m_renderFinishedSemaphores;
         std::vector<VkFence> m_inFlightFences;
         std::vector<VkFence> m_imagesInFlightFences;
         u32 m_currentFrame = 0;

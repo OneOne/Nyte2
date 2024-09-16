@@ -31,7 +31,7 @@ layout(location = 0) in vec2 inUVs;
 
 layout(location = 0) out vec4 outColor;
 
-layout (constant_id = 0) const int NUM_SAMPLES = 8;
+layout (constant_id = 0) const int NUM_SAMPLES = 8; // TODO: use push constant or else to set this value
 
 // Manual resolve for MSAA samples 
 vec4 resolve(sampler2DMS _tex, vec2 _UV)

@@ -40,27 +40,33 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
         ofbx::Vec2Attributes uv0 = geometryData.getUVs(0);
 
         FBXMesh fbxMesh;
-        int indexCount = positions.count;
-        for (int idx = 0; idx < indexCount; ++idx)
+        int vertexCount = positions.count;
+        for (int idx = 0; idx < vertexCount; ++idx)
         {
-            //int index = positions.indices[idx];
-            //if (index >= fbxMesh.m_vertices.size())
-            {
-                FBXVertex vertex;
-                vertex.position = positions.get(idx);
-                vertex.normal = normals.get(idx);
-                //vertex.tangent = tangents.get(idx);
-                vertex.uv = uv0.get(idx);
+            FBXVertex vertex;
+            vertex.position = positions.get(idx);
+            vertex.normal = normals.get(idx);
+            //vertex.tangent = tangents.get(idx);
+            vertex.uv = uv0.get(idx);
 
+            auto foundIt = std::find(fbxMesh.m_vertices.rbegin(), fbxMesh.m_vertices.rend(), vertex);
+            if (foundIt == fbxMesh.m_vertices.rend())
+            {
                 fbxMesh.m_vertices.emplace_back(
                     positions.get(idx),
                     normals.get(idx),
                     //tangents.get(idx),
                     uv0.get(idx)
                 );
+                u32 index = (u32)fbxMesh.m_vertices.size() - 1;
+                fbxMesh.m_indices.push_back(index);
             }
-
-            fbxMesh.m_indices.push_back((u32)fbxMesh.m_indices.size());
+            else
+            {
+                // vertex already registered
+                u32 index = (u32)std::distance(fbxMesh.m_vertices.begin(), foundIt.base()) - 1;
+                fbxMesh.m_indices.push_back(index);
+            }
         }
         
 

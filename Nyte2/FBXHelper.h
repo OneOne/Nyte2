@@ -64,6 +64,25 @@ struct FBXVertex
 
         return attributeDescriptions;
     }
+
+    bool operator== (const FBXVertex& _other)
+    {
+        return
+            position.x == _other.position.x
+            && position.y == _other.position.y
+            && position.z == _other.position.z
+
+            && normal.x == _other.normal.x
+            && normal.y == _other.normal.y
+            && normal.z == _other.normal.z
+
+            //&& tangent.x == _other.tangent.x
+            //&& tangent.y == _other.tangent.y
+            //&& tangent.z == _other.tangent.z
+
+            && uv.x == _other.uv.x
+            && uv.y == _other.uv.y;
+    }
 };
 
 struct FBXMesh

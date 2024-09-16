@@ -127,13 +127,8 @@ namespace Nyte
 
         //vkDestroyDescriptorSetLayout(m_logicalDevice, m_descriptorSetLayout, nullptr);
 
-        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-        {
-            vkDestroySemaphore(m_logicalDevice, m_renderFinishedSemaphores[i], nullptr);
-            vkDestroySemaphore(m_logicalDevice, m_imageAvailableSemaphores[i], nullptr);
-            vkDestroyFence(m_logicalDevice, m_inFlightFences[i], nullptr);
-        }
-
+        destroySemaphoresAndFences();
+        
         vkDestroyBuffer(m_logicalDevice, m_indexBuffer, nullptr);
         vkFreeMemory(m_logicalDevice, m_indexBufferDeviceMemory, nullptr);
         vkDestroyBuffer(m_logicalDevice, m_vertexBuffer, nullptr);
@@ -190,7 +185,7 @@ namespace Nyte
         // Offscreen gbuffer
         {
             submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &m_gbufferCmds.m_commandBuffers[imageIndex];
+            submitInfo.pCommandBuffers = &m_gbuffer.m_cmdBuffers.m_commandBuffers[imageIndex];
 
             submitInfo.waitSemaphoreCount = 1;
             submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrame]; // wait image is available
@@ -204,7 +199,7 @@ namespace Nyte
         // Deferred
         {
             submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &m_deferredCmds.m_commandBuffers[imageIndex];
+            submitInfo.pCommandBuffers = &m_deferred.m_cmdBuffers.m_commandBuffers[imageIndex];
 
             submitInfo.waitSemaphoreCount = 1;
             submitInfo.pWaitSemaphores = &m_gbufferSemaphores.m_semaphores[m_currentFrame]; // wait gbuffer is rendered
@@ -735,6 +730,9 @@ namespace Nyte
     }
     void Engine::destroySwapchain()
     {
+        destroyDeferredPipeline();
+        destroyOffscreenGBuffer();
+
         //vkDestroyImageView(m_logicalDevice, m_normalImageView, nullptr);
         //vkDestroyImage(m_logicalDevice, m_normalImage, nullptr);
         //vkFreeMemory(m_logicalDevice, m_normalImageDeviceMemory, nullptr);
@@ -792,6 +790,7 @@ namespace Nyte
 
         createSwapchain();
         createImageViews();
+        
         //createRenderPass();
         //createGraphicsPipeline();
         //createColorResources();
@@ -801,6 +800,9 @@ namespace Nyte
         //createDescriptorPool();
         //createDescriptorSets();
         //createCommandBuffers();
+
+        createOffscreenGBuffer();
+        createDeferredPipepline();
     }
 #pragma endregion Swapchain
 
@@ -1624,46 +1626,43 @@ namespace Nyte
         m_gbuffer.m_depthAttachment.createImageAttachment(m_logicalDevice, m_physicalDevice);
 
         // Render pass
-        RenderPass gbufferRenderPass;
-        gbufferRenderPass.m_colorAttachmentReferences = {
+        m_gbuffer.m_renderPass.m_colorAttachmentReferences = {
             m_gbuffer.m_colorAttachment.getAttachmentDescriptionRef(0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
             m_gbuffer.m_normalAttachment.getAttachmentDescriptionRef(1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
             m_gbuffer.m_specGlossAttachment.getAttachmentDescriptionRef(2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
         };
-        gbufferRenderPass.m_depthStencilAttachmentReferences = {
+        m_gbuffer.m_renderPass.m_depthStencilAttachmentReferences = {
             m_gbuffer.m_depthAttachment.getAttachmentDescriptionRef(3, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         };
-        gbufferRenderPass.m_attachmentDescriptions = {
+        m_gbuffer.m_renderPass.m_attachmentDescriptions = {
             m_gbuffer.m_colorAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
             m_gbuffer.m_normalAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
             m_gbuffer.m_specGlossAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
             m_gbuffer.m_depthAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         };
-        gbufferRenderPass.m_dependencies = {
+        m_gbuffer.m_renderPass.m_dependencies = {
             RenderPass::colorDependency(),
             RenderPass::colorDependency(),
             RenderPass::colorDependency(),
             RenderPass::depthDependency(),
         };
 
-        gbufferRenderPass.createRenderPass(m_logicalDevice);
+        m_gbuffer.m_renderPass.createRenderPass(m_logicalDevice);
 
         // Framebuffer
-        Framebuffer gbuffer;
-        gbuffer.m_attachments = { m_gbuffer.m_colorAttachment, m_gbuffer.m_normalAttachment, m_gbuffer.m_specGlossAttachment, m_gbuffer.m_depthAttachment };
-        gbuffer.m_renderPass = gbufferRenderPass;
-        gbuffer.m_extent = m_swapchainExtent;
-        gbuffer.createFramebuffer(m_logicalDevice);
+        m_gbuffer.m_framebuffer.m_attachments = { m_gbuffer.m_colorAttachment, m_gbuffer.m_normalAttachment, m_gbuffer.m_specGlossAttachment, m_gbuffer.m_depthAttachment };
+        m_gbuffer.m_framebuffer.m_renderPass = m_gbuffer.m_renderPass;
+        m_gbuffer.m_framebuffer.m_extent = m_swapchainExtent;
+        m_gbuffer.m_framebuffer.createFramebuffer(m_logicalDevice);
 
+        // Shaders
+        m_gbuffer.m_vertexShader = ShaderStage::vertexShader();
+        m_gbuffer.m_vertexShader.m_path = "Resources/Shaders/offscreen_gbuffer_vs.spv";
+        m_gbuffer.m_vertexShader.createShader(m_logicalDevice);
 
-        // Pipeline
-        ShaderStage vertexShader = ShaderStage::vertexShader();
-        vertexShader.m_path = "Resources/Shaders/offscreen_gbuffer_vs.spv";
-        vertexShader.createStage(m_logicalDevice);
-
-        ShaderStage fragmentShader = ShaderStage::fragmentShader();
-        fragmentShader.m_path = "Resources/Shaders/offscreen_gbuffer_fs.spv";
-        fragmentShader.createStage(m_logicalDevice);
+        m_gbuffer.m_fragmentShader = ShaderStage::fragmentShader();
+        m_gbuffer.m_fragmentShader.m_path = "Resources/Shaders/offscreen_gbuffer_fs.spv";
+        m_gbuffer.m_fragmentShader.createShader(m_logicalDevice);
 
         VertexDescription vertexDescription;
         vertexDescription.m_bindingIndex = 0;
@@ -1674,62 +1673,91 @@ namespace Nyte
         };
         vertexDescription.setup();
 
-        DescriptorSetLayout descriptorSetLayout;
-        descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_VERTEX_BIT);
-        descriptorSetLayout.addSamplerBinding();
-        descriptorSetLayout.createDescriptorSetLayout(m_logicalDevice);
+        // Descriptor Set Layout
+        m_gbuffer.m_descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_VERTEX_BIT);
+        m_gbuffer.m_descriptorSetLayout.addSamplerBinding();
+        m_gbuffer.m_descriptorSetLayout.createDescriptorSetLayout(m_logicalDevice);
 
-        PipelineLayout gbufferPipelineLayout;
-        gbufferPipelineLayout.m_descriptorSetLayouts = { descriptorSetLayout };
-        gbufferPipelineLayout.createPipelineLayout(m_logicalDevice);
+        // Pipeline layout
+        m_gbuffer.m_pipelineLayout.m_descriptorSetLayouts = { m_gbuffer.m_descriptorSetLayout };
+        m_gbuffer.m_pipelineLayout.createPipelineLayout(m_logicalDevice);
 
-        Pipeline gbufferPipeline;
-        gbufferPipeline.m_stages = { vertexShader, fragmentShader };
-        gbufferPipeline.m_vertexDescription = vertexDescription;
-        gbufferPipeline.m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        gbufferPipeline.m_extent = m_swapchainExtent;
-        gbufferPipeline.m_sampleCount = m_msaaSamples;
-        gbufferPipeline.m_renderPass = gbufferRenderPass;
-        gbufferPipeline.m_pipelineLayout = gbufferPipelineLayout;
-        gbufferPipeline.createPipeline(m_logicalDevice);
+        // Pipeline
+        m_gbuffer.m_pipeline.m_shaders = { m_gbuffer.m_vertexShader, m_gbuffer.m_fragmentShader };
+        m_gbuffer.m_pipeline.m_vertexDescription = vertexDescription;
+        m_gbuffer.m_pipeline.m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        m_gbuffer.m_pipeline.m_extent = m_swapchainExtent;
+        m_gbuffer.m_pipeline.m_sampleCount = m_msaaSamples;
+        m_gbuffer.m_pipeline.m_renderPass = m_gbuffer.m_renderPass;
+        m_gbuffer.m_pipeline.m_pipelineLayout = m_gbuffer.m_pipelineLayout;
+        m_gbuffer.m_pipeline.createPipeline(m_logicalDevice);
 
 
         // Descriptor Sets
         u32 swapchainSize = (u32)m_swapchainImages.size();
-        DescriptorSets descriptorSets;
-        descriptorSets.m_descriptorSetLayout = descriptorSetLayout;
-        descriptorSets.allocateDescriptorSets(m_logicalDevice, swapchainSize);
+        m_gbuffer.m_descriptorSets.m_descriptorSetLayout = m_gbuffer.m_descriptorSetLayout;
+        m_gbuffer.m_descriptorSets.allocateDescriptorSets(m_logicalDevice, swapchainSize);
         for (u32 i = 0; i < swapchainSize; ++i)
         {
             // Write descriptor sets
-            descriptorSets.addWriteBufferDescriptorSet(descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, m_uniformBuffers[i], 0, sizeof(UBO_ModelViewProj));
-            descriptorSets.addWriteImageDescriptorSet(descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_textureImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            descriptorSets.updateDescriptorSets(m_logicalDevice);
+            m_gbuffer.m_descriptorSets.addWriteBufferDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, m_uniformBuffers[i], 0, sizeof(UBO_ModelViewProj));
+            m_gbuffer.m_descriptorSets.addWriteImageDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_textureImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_gbuffer.m_descriptorSets.updateDescriptorSets(m_logicalDevice);
         }
 
         // Command buffer
-        m_gbufferCmds.allocateCommands(m_logicalDevice, m_graphicsCommandPool, swapchainSize);
-        m_gbufferCmds.m_pipeline = gbufferPipeline;
-        m_gbufferCmds.m_framebuffer = gbuffer;
+        m_gbuffer.m_cmdBuffers.allocateCommands(m_logicalDevice, m_graphicsCommandPool, swapchainSize);
+        m_gbuffer.m_cmdBuffers.m_pipeline = m_gbuffer.m_pipeline;
+        m_gbuffer.m_cmdBuffers.m_framebuffer = m_gbuffer.m_framebuffer;
 
         for (u32 i = 0; i < swapchainSize; ++i)
         {
-            m_gbufferCmds.beginPass(i);
+            m_gbuffer.m_cmdBuffers.beginPass(i);
 
             // bind vertex buffer
             VkBuffer vertexBuffers[] = { m_vertexBuffer };
             VkDeviceSize offsets[] = { 0 };
-            vkCmdBindVertexBuffers(m_gbufferCmds[i], 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(m_gbufferCmds[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdBindDescriptorSets(m_gbufferCmds[i], VK_PIPELINE_BIND_POINT_GRAPHICS, gbufferPipelineLayout.m_pipelineLayout, 0, 1, &descriptorSets.m_descriptorSets[i], 0, nullptr);
+            vkCmdBindVertexBuffers(m_gbuffer.m_cmdBuffers[i], 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(m_gbuffer.m_cmdBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(m_gbuffer.m_cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer.m_pipelineLayout.m_pipelineLayout, 0, 1, &m_gbuffer.m_descriptorSets.m_descriptorSets[i], 0, nullptr);
 
-            vkCmdDrawIndexed(m_gbufferCmds[i], (u32)m_indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
+            vkCmdDrawIndexed(m_gbuffer.m_cmdBuffers[i], (u32)m_indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
 
-            m_gbufferCmds.endPass(i);
+            m_gbuffer.m_cmdBuffers.endPass(i);
         }
+    }
+    void Engine::destroyOffscreenGBuffer()
+    {
+        // Command buffer
+        m_gbuffer.m_cmdBuffers.freeCommands(m_logicalDevice, m_graphicsCommandPool);
 
-        // Create Semaphore to sync offscreen gbuffer and deferred
-        m_gbufferSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
+        // Descriptor Sets
+        m_gbuffer.m_descriptorSets.freeDescriptorSets(m_logicalDevice);
+        
+        // Framebuffer
+        m_gbuffer.m_framebuffer.destroyFramebuffer(m_logicalDevice);
+
+        // Pipeline
+        m_gbuffer.m_pipeline.destroyPipeline(m_logicalDevice);
+
+        // Pipeline layout
+        m_gbuffer.m_pipelineLayout.destroyPipelineLayout(m_logicalDevice);
+
+        // Descriptor Set Layout
+        m_gbuffer.m_descriptorSetLayout.destroyDescriptorSetLayout(m_logicalDevice);
+        
+        // Shaders
+        m_gbuffer.m_fragmentShader.destroyShader(m_logicalDevice);
+        m_gbuffer.m_vertexShader.destroyShader(m_logicalDevice);
+
+        // Render Pass
+        m_gbuffer.m_renderPass.destroyRenderPass(m_logicalDevice);
+
+        // Image Attachments
+        m_gbuffer.m_depthAttachment.destroyImageAttachment(m_logicalDevice);
+        m_gbuffer.m_specGlossAttachment.destroyImageAttachment(m_logicalDevice);
+        m_gbuffer.m_normalAttachment.destroyImageAttachment(m_logicalDevice);
+        m_gbuffer.m_colorAttachment.destroyImageAttachment(m_logicalDevice);
     }
 
     void Engine::createDeferredPipepline()
@@ -1750,99 +1778,117 @@ namespace Nyte
         colorResolveAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
         // Render pass
-        RenderPass deferredRenderPass;
-        deferredRenderPass.m_colorAttachmentReferences = { colorResolveAttachmentRef };
-        //deferredRenderPass.m_depthStencilAttachmentReferences = { m_gbuffer.m_depthAttachment.getAttachmentDescriptionRef(1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) };
-        //deferredRenderPass.m_resolveAttachmentReferences = { colorResolveAttachmentRef }; => Resolve is done manually due to MSAA!
-
-        deferredRenderPass.m_attachmentDescriptions = {
-            colorResolveAttachment,
-            //m_gbuffer.m_depthAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-        };
-        deferredRenderPass.m_dependencies = {
-            RenderPass::colorDependency(),
-            //RenderPass::depthDependency(),
-        };
-        deferredRenderPass.createRenderPass(m_logicalDevice);
+        m_deferred.m_renderPass.m_colorAttachmentReferences = { colorResolveAttachmentRef };
+        m_deferred.m_renderPass.m_attachmentDescriptions = { colorResolveAttachment };
+        m_deferred.m_renderPass.m_dependencies = { RenderPass::colorDependency() };
+        m_deferred.m_renderPass.createRenderPass(m_logicalDevice);
 
         // Framebuffers
-        m_deferredFramebuffers.resize(m_swapchainImageViews.size());
+        m_deferred.m_framebuffers.resize(m_swapchainImageViews.size());
         for (u32 i = 0; i < (u32)m_swapchainImageViews.size(); i++)
         {
             ImageAttachment swapchainImage = ImageAttachment::colorAttachment();
             swapchainImage.m_imageView = m_swapchainImageViews[i];
 
-            m_deferredFramebuffers[i].m_attachments = {
-                swapchainImage,
-                //m_gbuffer.m_depthAttachment
-            };
-            m_deferredFramebuffers[i].m_renderPass = deferredRenderPass;
-            m_deferredFramebuffers[i].m_extent = m_swapchainExtent;
-            m_deferredFramebuffers[i].createFramebuffer(m_logicalDevice);
+            m_deferred.m_framebuffers[i].m_attachments = { swapchainImage };
+            m_deferred.m_framebuffers[i].m_renderPass = m_deferred.m_renderPass;
+            m_deferred.m_framebuffers[i].m_extent = m_swapchainExtent;
+            m_deferred.m_framebuffers[i].createFramebuffer(m_logicalDevice);
         }
 
         // Pipeline
-        ShaderStage vertexShader = ShaderStage::vertexShader();
-        vertexShader.m_path = "Resources/Shaders/deferred_resolve_vs.spv";
-        vertexShader.createStage(m_logicalDevice);
+        m_deferred.m_vertexShader = ShaderStage::vertexShader();
+        m_deferred.m_vertexShader.m_path = "Resources/Shaders/deferred_resolve_vs.spv";
+        m_deferred.m_vertexShader.createShader(m_logicalDevice);
 
-        ShaderStage fragmentShader = ShaderStage::fragmentShader();
-        fragmentShader.m_path = "Resources/Shaders/deferred_resolve_fs.spv";
-        fragmentShader.createStage(m_logicalDevice);
+        m_deferred.m_fragmentShader = ShaderStage::fragmentShader();
+        m_deferred.m_fragmentShader.m_path = "Resources/Shaders/deferred_resolve_fs.spv";
+        m_deferred.m_fragmentShader.createShader(m_logicalDevice);
 
         VertexDescription emptyVertexDescription;
 
-        DescriptorSetLayout descriptorSetLayout;
-        descriptorSetLayout.addSamplerBinding(); // colorSampler
-        descriptorSetLayout.addSamplerBinding(); // normalSampler
-        descriptorSetLayout.addSamplerBinding(); // specGlossSampler
-        descriptorSetLayout.createDescriptorSetLayout(m_logicalDevice);
+        // Descriptor Set Layout
+        m_deferred.m_descriptorSetLayout.addSamplerBinding(); // colorSampler
+        m_deferred.m_descriptorSetLayout.addSamplerBinding(); // normalSampler
+        m_deferred.m_descriptorSetLayout.addSamplerBinding(); // specGlossSampler
+        m_deferred.m_descriptorSetLayout.createDescriptorSetLayout(m_logicalDevice);
 
-        PipelineLayout pipelineLayout;
-        pipelineLayout.m_descriptorSetLayouts = { descriptorSetLayout };
-        pipelineLayout.createPipelineLayout(m_logicalDevice);
+        // Pipeline Layout
+        m_deferred.m_pipelineLayout.m_descriptorSetLayouts = { m_deferred.m_descriptorSetLayout };
+        m_deferred.m_pipelineLayout.createPipelineLayout(m_logicalDevice);
 
-        Pipeline deferredPipeline;
-        deferredPipeline.m_stages = { vertexShader, fragmentShader };
-        deferredPipeline.m_vertexDescription = emptyVertexDescription;
-        deferredPipeline.m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP; // as we will render only a quad
-        deferredPipeline.m_extent = m_swapchainExtent;
-        deferredPipeline.m_sampleCount = VK_SAMPLE_COUNT_1_BIT; // m_msaaSamples;
-        deferredPipeline.m_renderPass = deferredRenderPass;
-        deferredPipeline.m_pipelineLayout = pipelineLayout;
-        deferredPipeline.m_depthTestEnable = false;
-        deferredPipeline.createPipeline(m_logicalDevice);
+
+        // Pipeline
+        m_deferred.m_pipeline.m_shaders = { m_deferred.m_vertexShader, m_deferred.m_fragmentShader };
+        m_deferred.m_pipeline.m_vertexDescription = emptyVertexDescription;
+        m_deferred.m_pipeline.m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP; // as we will render only a quad
+        m_deferred.m_pipeline.m_extent = m_swapchainExtent;
+        m_deferred.m_pipeline.m_sampleCount = VK_SAMPLE_COUNT_1_BIT; // m_msaaSamples;
+        m_deferred.m_pipeline.m_renderPass = m_deferred.m_renderPass;
+        m_deferred.m_pipeline.m_pipelineLayout = m_deferred.m_pipelineLayout;
+        m_deferred.m_pipeline.m_depthTestEnable = false;
+        m_deferred.m_pipeline.createPipeline(m_logicalDevice);
+
+        u32 swapchainSize = (u32)m_swapchainImages.size();
 
         // Descriptor Sets
-        u32 swapchainSize = (u32)m_swapchainImages.size();
-        DescriptorSets descriptorSets;
-        descriptorSets.m_descriptorSetLayout = descriptorSetLayout;
-        descriptorSets.allocateDescriptorSets(m_logicalDevice, swapchainSize);
+        m_deferred.m_descriptorSets.m_descriptorSetLayout = m_deferred.m_descriptorSetLayout;
+        m_deferred.m_descriptorSets.allocateDescriptorSets(m_logicalDevice, swapchainSize);
         for (u32 i = 0; i < swapchainSize; ++i)
         {
             // Write descriptor sets
-            descriptorSets.addWriteImageDescriptorSet(descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_colorAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            descriptorSets.addWriteImageDescriptorSet(descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_normalAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            descriptorSets.addWriteImageDescriptorSet(descriptorSets.m_descriptorSets[i], 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_specGlossAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            descriptorSets.updateDescriptorSets(m_logicalDevice);
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_colorAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_normalAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_specGlossAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.updateDescriptorSets(m_logicalDevice);
         }
 
         // Command buffer
-        m_deferredCmds.allocateCommands(m_logicalDevice, m_graphicsCommandPool, swapchainSize);
-        m_deferredCmds.m_pipeline = deferredPipeline;
+        m_deferred.m_cmdBuffers.allocateCommands(m_logicalDevice, m_graphicsCommandPool, swapchainSize);
+        m_deferred.m_cmdBuffers.m_pipeline = m_deferred.m_pipeline;
 
         for (u32 i = 0; i < swapchainSize; ++i)
         {
-            m_deferredCmds.m_framebuffer = m_deferredFramebuffers[i];
-            m_deferredCmds.beginPass(i);
+            m_deferred.m_cmdBuffers.m_framebuffer = m_deferred.m_framebuffers[i];
+            m_deferred.m_cmdBuffers.beginPass(i);
 
-            vkCmdBindDescriptorSets(m_deferredCmds[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout.m_pipelineLayout, 0, 1, &descriptorSets.m_descriptorSets[i], 0, nullptr);
+            vkCmdBindDescriptorSets(m_deferred.m_cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_deferred.m_pipelineLayout.m_pipelineLayout, 0, 1, &m_deferred.m_descriptorSets.m_descriptorSets[i], 0, nullptr);
 
-            vkCmdDraw(m_deferredCmds[i], 4, 1, 0, 0); // vertexCount, instanceCount, firstVertex, firstInstance
+            vkCmdDraw(m_deferred.m_cmdBuffers[i], 4, 1, 0, 0); // vertexCount, instanceCount, firstVertex, firstInstance
 
-            m_deferredCmds.endPass(i);
+            m_deferred.m_cmdBuffers.endPass(i);
         }
 
+    }
+    void Engine::destroyDeferredPipeline()
+    {
+        // Command buffer
+        m_deferred.m_cmdBuffers.freeCommands(m_logicalDevice, m_graphicsCommandPool);
+
+        // Descriptor Sets
+        m_deferred.m_descriptorSets.freeDescriptorSets(m_logicalDevice);
+
+        // Framebuffers
+        m_deferred.m_framebuffers.resize(m_swapchainImageViews.size());
+        for (u32 i = 0; i < (u32)m_swapchainImageViews.size(); i++)
+        {
+            m_deferred.m_framebuffers[i].destroyFramebuffer(m_logicalDevice);
+        }
+        // Pipeline
+        m_deferred.m_pipeline.destroyPipeline(m_logicalDevice);
+
+        // Pipeline layout
+        m_deferred.m_pipelineLayout.destroyPipelineLayout(m_logicalDevice);
+
+        // Descriptor Set Layout
+        m_deferred.m_descriptorSetLayout.destroyDescriptorSetLayout(m_logicalDevice);
+
+        // Shaders
+        m_deferred.m_fragmentShader.destroyShader(m_logicalDevice);
+        m_deferred.m_vertexShader.destroyShader(m_logicalDevice);
+
+        // Render Pass
+        m_deferred.m_renderPass.destroyRenderPass(m_logicalDevice);
     }
 
     //void Engine::createColorResources()
@@ -1960,6 +2006,8 @@ namespace Nyte
 
     void Engine::loadModel()
     {
+        cout << "Engine::loadModel >> \n";
+
         //RawObj model;
         //model.path = MODEL_PATH;
         //FileHelper::loadModel(model);
@@ -2021,6 +2069,8 @@ namespace Nyte
             }
             m_indices.insert(m_indices.end(), mesh.m_indices.begin(), mesh.m_indices.end());
         }
+
+        cout << "<< Engine::loadModel\n";
     }
 
     u32 Engine::findMemoryType(u32 _typeFilter, VkMemoryPropertyFlags _properties)
@@ -2328,26 +2378,34 @@ namespace Nyte
 
     void Engine::createSemaphoresAndFences()
     {
-        m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        // Semaphopres
+        m_imageAvailableSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
+        m_renderFinishedSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
+        m_gbufferSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
+        
+        // Fences
         m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
         m_imagesInFlightFences.resize(m_swapchainImages.size(), VK_NULL_HANDLE);
-
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
         for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
-            VCR(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Failed to create semaphore.");
-            VCR(vkCreateSemaphore(m_logicalDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Failed to create semaphore.");
             VCR(vkCreateFence(m_logicalDevice, &fenceInfo, nullptr, &m_inFlightFences[i]), "Failed to create fence.");
         }
     }
+    void Engine::destroySemaphoresAndFences()
+    {
+        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+        {
+            vkDestroyFence(m_logicalDevice, m_inFlightFences[i], nullptr);
+        }
 
+        m_gbufferSemaphores.destroySemaphores(m_logicalDevice);
+        m_renderFinishedSemaphores.destroySemaphores(m_logicalDevice);
+        m_imageAvailableSemaphores.destroySemaphores(m_logicalDevice);
+    }
 
     void Engine::updateUniformBuffer(u32 _currentImage)
     {
@@ -2355,6 +2413,7 @@ namespace Nyte
 
         chrono::time_point currentTime = chrono::high_resolution_clock::now();
         float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
+        time *= 0.5f;
 
         UBO_ModelViewProj ubo_MVP{};
         ubo_MVP.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
