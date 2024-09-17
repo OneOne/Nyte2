@@ -71,6 +71,7 @@ namespace Nyte
 {
     class Engine;
 
+
     struct QueueFamilyIndices
     {
         std::optional<u32> graphicsFamily;
@@ -94,6 +95,111 @@ namespace Nyte
         alignas(16) glm::mat4 model;
         alignas(16) glm::mat4 view;
         alignas(16) glm::mat4 proj;
+    };
+
+    class VulkanHelper
+    {
+    public:
+        static u32 findMemoryType(VkDevice _device, VkPhysicalDevice _physicalDevice, VkMemoryRequirements _memoryRequirements, VkMemoryPropertyFlags _properties)
+        {
+            VkPhysicalDeviceMemoryProperties physicalMemoryProperties;
+            vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &physicalMemoryProperties);
+            for (u32 i = 0; i < physicalMemoryProperties.memoryTypeCount; i++)
+            {
+                if (_memoryRequirements.memoryTypeBits & (1 << i) && (physicalMemoryProperties.memoryTypes[i].propertyFlags & _properties) == _properties)
+                {
+                    return i;
+                }
+            }
+            throw std::runtime_error("No memory type fit the given buffer.");
+        }
+
+        static VkCommandBuffer beginSingleTimeCommands(VkDevice _device, VkCommandPool _commandPool)
+        {
+            VkCommandBufferAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandPool = _commandPool;
+            allocInfo.commandBufferCount = 1;
+
+            VkCommandBuffer commandBuffer;
+            vkAllocateCommandBuffers(_device, &allocInfo, &commandBuffer);
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+            return commandBuffer;
+        }
+        static void endSingleTimeCommands(
+            VkDevice _device,
+            VkCommandPool _commandPool,
+            VkQueue _queue,
+            VkCommandBuffer _commandBuffer,
+            u32 _signalSemaphoreCount = 0, 
+            VkSemaphore* _signalSemaphore = nullptr, 
+            u32 _waitSemaphoreCount = 0, 
+            VkSemaphore* _waitSemaphore = nullptr, 
+            VkPipelineStageFlags* _waitStageMask = nullptr)
+        {
+            vkEndCommandBuffer(_commandBuffer);
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &_commandBuffer;
+
+            if (_signalSemaphoreCount > 0 && _signalSemaphore != nullptr)
+            {
+                submitInfo.signalSemaphoreCount = _signalSemaphoreCount;
+                submitInfo.pSignalSemaphores = _signalSemaphore;
+            }
+            if (_waitSemaphoreCount > 0 && _waitSemaphore != nullptr)
+            {
+                submitInfo.waitSemaphoreCount = _waitSemaphoreCount;
+                submitInfo.pWaitSemaphores = _waitSemaphore;
+                submitInfo.pWaitDstStageMask = _waitStageMask;
+            }
+
+            vkQueueSubmit(_queue, 1, &submitInfo, VK_NULL_HANDLE);
+            vkQueueWaitIdle(_queue);
+
+            vkFreeCommandBuffers(_device, _commandPool, 1, &_commandBuffer);
+        }
+    };
+
+    struct Buffer
+    {
+        VkBuffer m_buffer;
+        VkDeviceMemory m_bufferDeviceMemory;
+
+        VkDeviceSize m_size;
+        VkBufferUsageFlags m_usage;
+        VkMemoryPropertyFlags m_properties;
+
+        inline void createBuffer(VkDevice _device, VkPhysicalDevice _physicalDevice)
+        {
+            VkBufferCreateInfo bufferInfo{};
+            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferInfo.size = m_size;
+            bufferInfo.usage = m_usage;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            VCR(vkCreateBuffer(_device, &bufferInfo, nullptr, &m_buffer), "Failed to create buffer.");
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(_device, m_buffer, &memoryRequirements);
+
+            VkMemoryAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocInfo.allocationSize = memoryRequirements.size;
+            allocInfo.memoryTypeIndex = VulkanHelper::findMemoryType(_device, _physicalDevice, memoryRequirements, m_properties);
+            VCR(vkAllocateMemory(_device, &allocInfo, nullptr, &m_bufferDeviceMemory), "Failed to allocate buffer device memory.");
+
+            vkBindBufferMemory(_device, m_buffer, m_bufferDeviceMemory, 0);
+        }
     };
 
     struct ImageAttachment
@@ -130,19 +236,6 @@ namespace Nyte
             return attachment;
         }
 
-        inline u32 findMemoryType(VkDevice _device, VkPhysicalDevice _physicalDevice, VkMemoryRequirements _memoryRequirements, VkMemoryPropertyFlags _properties)
-        {
-            VkPhysicalDeviceMemoryProperties physicalMemoryProperties;
-            vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &physicalMemoryProperties);
-            for (u32 i = 0; i < physicalMemoryProperties.memoryTypeCount; i++)
-            {
-                if (_memoryRequirements.memoryTypeBits & (1 << i) && (physicalMemoryProperties.memoryTypes[i].propertyFlags & _properties) == _properties)
-                {
-                    return i;
-                }
-            }
-            throw std::runtime_error("No memory type fit the given buffer.");
-        }
         inline void createImageAttachment(VkDevice _device, VkPhysicalDevice _physicalDevice)
         {
             VkImageCreateInfo imageInfo{};
@@ -169,7 +262,7 @@ namespace Nyte
             VkMemoryAllocateInfo allocInfo{};
             allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
             allocInfo.allocationSize = memoryRequirements.size;
-            allocInfo.memoryTypeIndex = findMemoryType(_device, _physicalDevice, memoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            allocInfo.memoryTypeIndex = VulkanHelper::findMemoryType(_device, _physicalDevice, memoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
             VCR(vkAllocateMemory(_device, &allocInfo, nullptr, &m_imageDeviceMemory), "Failed to allocate image device memory.");
 
             // Bind image and device memory
@@ -218,6 +311,206 @@ namespace Nyte
             attachmentReference.layout = _layout;
 
             return attachmentReference;
+        }
+
+        inline void loadImageFromFile(VkDevice _device, VkPhysicalDevice _physicalDevice, std::string _filePath, VkSampleCountFlagBits _sampleCount, VkCommandPool _commandPool, VkQueue _queue)
+        {
+            // Load image from file
+            RawImage rawImage;
+            rawImage.path = _filePath;
+            FileHelper::loadImage(rawImage);
+
+            // Create a staging buffer for transfer
+            Buffer stagingBuffer;
+            stagingBuffer.m_size = (VkDeviceSize)rawImage.size;
+            stagingBuffer.m_usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+            stagingBuffer.m_properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            stagingBuffer.createBuffer(_device, _physicalDevice);
+
+            void* data;
+            vkMapMemory(_device, stagingBuffer.m_bufferDeviceMemory, 0, (VkDeviceSize)rawImage.size, 0, &data);
+            memcpy(data, rawImage.data, (u32)rawImage.size);
+            vkUnmapMemory(_device, stagingBuffer.m_bufferDeviceMemory);
+
+            // Unload image data
+            FileHelper::unloadImage(rawImage);
+
+            m_format = VK_FORMAT_R8G8B8A8_SRGB;
+            m_extent = { (u32)rawImage.width, (u32)rawImage.height };
+            m_mipLevels = rawImage.mipLevels;
+            m_sampleCount = VK_SAMPLE_COUNT_1_BIT;// _sampleCount;
+
+            // Add transfer to usage
+            m_usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            createImageAttachment(_device, _physicalDevice);
+
+
+            VkCommandBuffer commandBuffer = VulkanHelper::beginSingleTimeCommands(_device, _commandPool);
+
+            // Transition to "transfer layout"
+            {
+                VkImageMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.image = m_image;
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                barrier.subresourceRange.baseMipLevel = 0;
+                barrier.subresourceRange.levelCount = m_mipLevels;
+                barrier.subresourceRange.baseArrayLayer = 0;
+                barrier.subresourceRange.layerCount = 1;
+
+                barrier.srcAccessMask = VK_ACCESS_NONE;
+                barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+                vkCmdPipelineBarrier(
+                    commandBuffer,
+                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    0,
+                    0, nullptr,
+                    0, nullptr,
+                    1, &barrier
+                );
+            }
+
+            // Copy staging to image
+            VkBufferImageCopy region{};
+            region.bufferOffset = 0;
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = 0;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = 1;
+            region.imageOffset = { 0, 0, 0 };
+            region.imageExtent = { (u32)rawImage.width, (u32)rawImage.height, 1 };
+            vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.m_buffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+            // Generate mipmaps
+            {
+                // Check image format support filtering
+                VkFormatProperties formatProperties;
+                vkGetPhysicalDeviceFormatProperties(_physicalDevice, m_format, &formatProperties);
+
+                if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+                {
+                    throw std::runtime_error("Image format does not support linear filtering.");
+                }
+
+                VkImageMemoryBarrier barrier{};
+                barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                barrier.image = m_image;
+                barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                barrier.subresourceRange.baseArrayLayer = 0;
+                barrier.subresourceRange.layerCount = 1;
+                barrier.subresourceRange.levelCount = 1;
+
+                i32 mipWidth = rawImage.width;
+                i32 mipHeight = rawImage.height;
+
+                for (uint32_t i = 1; i < m_mipLevels; i++)
+                {
+                    barrier.subresourceRange.baseMipLevel = i - 1;
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+                    // Barrier from transfer dst layout to transfer src (on graphics queue)
+                    vkCmdPipelineBarrier(
+                        commandBuffer,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                        0, nullptr,
+                        0, nullptr,
+                        1, &barrier);
+
+                    VkImageBlit blit{};
+                    blit.srcOffsets[0] = { 0, 0, 0 };
+                    blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+                    blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    blit.srcSubresource.mipLevel = i - 1;
+                    blit.srcSubresource.baseArrayLayer = 0;
+                    blit.srcSubresource.layerCount = 1;
+                    blit.dstOffsets[0] = { 0, 0, 0 };
+                    blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+                    blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    blit.dstSubresource.mipLevel = i;
+                    blit.dstSubresource.baseArrayLayer = 0;
+                    blit.dstSubresource.layerCount = 1;
+
+                    // Blit mip level
+                    vkCmdBlitImage(
+                        commandBuffer,
+                        m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        1, &blit,
+                        VK_FILTER_LINEAR);
+
+                    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+                    // Barrier from transfer src layout to shader read only (on graphics queue)
+                    vkCmdPipelineBarrier(
+                        commandBuffer,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                        0, nullptr,
+                        0, nullptr,
+                        1, &barrier);
+
+                    if (mipWidth > 1) mipWidth /= 2;
+                    if (mipHeight > 1) mipHeight /= 2;
+                }
+
+
+                barrier.subresourceRange.baseMipLevel = m_mipLevels - 1;
+                barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+                // Barrier from transfer dst layout to shader read only (on graphics queue)
+                vkCmdPipelineBarrier(commandBuffer,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                    0, nullptr,
+                    0, nullptr,
+                    1, &barrier);
+            }
+
+            //// Transition to "shader ready layout"
+            //{
+            //    VkImageMemoryBarrier barrier{};
+            //    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            //    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            //    barrier.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+            //    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            //    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            //    barrier.image = m_image;
+            //    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            //    barrier.subresourceRange.baseMipLevel = 0;
+            //    barrier.subresourceRange.levelCount = m_mipLevels;
+            //    barrier.subresourceRange.baseArrayLayer = 0;
+            //    barrier.subresourceRange.layerCount = 1;
+            //
+            //    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            //    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            //
+            //    vkCmdPipelineBarrier(
+            //        commandBuffer,
+            //        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            //        0,
+            //        0, nullptr,
+            //        0, nullptr,
+            //        1, &barrier
+            //    );
+            //}
+
+            VulkanHelper::endSingleTimeCommands(_device, _commandPool, _queue, commandBuffer);
         }
     };
 
@@ -905,11 +1198,6 @@ namespace Nyte
         void recreateSwapchain();
 #pragma endregion Swapchain
 
-        //void createRenderPass();
-        //VkShaderModule createShaderModule(const std::vector<char>& code);
-        //void createDescriptorSetLayout();
-        //void createGraphicsPipeline();
-
 #pragma region Common
         VkCommandBuffer beginSingleTimeCommands(VkCommandPool _commandPool);
         void endSingleTimeCommands(VkCommandPool _commandPool, VkQueue _queue, VkCommandBuffer _commandBuffer, u32 _signalSemaphoreCount = 0, VkSemaphore* _signalSemaphore = nullptr, u32 _waitSemaphoreCount = 0, VkSemaphore* _waitSemaphore = nullptr, VkPipelineStageFlags* _waitStageMask = nullptr);
@@ -932,15 +1220,12 @@ namespace Nyte
 
         void createDeferredPipepline();
         void destroyDeferredPipeline();
-        //void createColorResources();
+
 
 
         VkFormat findSupportedFormat(const std::vector<VkFormat>& _candidates, VkImageTiling _tiling, VkFormatFeatureFlags _features);
         bool hasStencilComponent(VkFormat _format);
         VkFormat findDepthFormat();
-        //void createDepthResources();
-        //
-        //void createFramebuffers();
 
         void loadModel();
 
@@ -948,13 +1233,9 @@ namespace Nyte
         void createVertexBuffer();
         void createIndexBuffer();
         void createUniformBuffers();
-        void createTextureImage();
-        void createTextureImageView();
+        //void createTextureImage();
+        //void createTextureImageView();
         void createTextureSampler();
-
-        //void createDescriptorPool();
-        //void createDescriptorSets();
-        //void createCommandBuffers();
 
         void createSemaphoresAndFences();
         void destroySemaphoresAndFences();
@@ -985,40 +1266,14 @@ namespace Nyte
         VkFormat m_swapchainImageFormat;
         VkExtent2D m_swapchainExtent;
 
+        VkCommandPool m_graphicsCommandPool;
+        VkCommandPool m_transferCommandPool;
 
 
         GBuffer m_gbuffer;
         DeferredResolve m_deferred;
 
         Semaphores m_gbufferSemaphores;
-
-
-
-        //// G Buffer - Color
-        //VkImage m_colorImage;
-        //VkDeviceMemory m_colorImageDeviceMemory;
-        //VkImageView m_colorImageView;
-        //// G Buffer - Normal
-        //VkImage m_normalImage;
-        //VkDeviceMemory m_normalImageDeviceMemory;
-        //VkImageView m_normalImageView;
-        //// G Buffer - Depth
-        //VkImage m_depthImage;
-        //VkDeviceMemory m_depthImageDeviceMemory;
-        //VkImageView m_depthImageView;
-
-        /*VkRenderPass m_renderPass;
-        VkDescriptorSetLayout m_descriptorSetLayout;
-        VkDescriptorPool m_descriptorPool;
-        std::vector<VkDescriptorSet> m_descriptorSets;
-        VkPipelineLayout m_pipelineLayout;
-        VkPipeline m_graphicsPipeline;*/
-
-        //std::vector<VkFramebuffer> m_swapchainFramebuffers;
-        VkCommandPool m_graphicsCommandPool;
-        VkCommandPool m_transferCommandPool;
-        //std::vector<VkCommandBuffer> m_graphicsCommandBuffers;
-        //std::vector<VkCommandBuffer> m_transferCommandBuffers;
 
 
         std::vector<Vertex> m_vertices;
@@ -1031,10 +1286,12 @@ namespace Nyte
         std::vector<VkBuffer> m_uniformBuffers;
         std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
 
+        std::vector<ImageAttachment> m_textures;
+
         RawImage m_texture;
-        VkImage m_textureImage;
-        VkDeviceMemory m_textureImageDeviceMemory;
-        VkImageView m_textureImageView;
+        //VkImage m_textureImage;
+        //VkDeviceMemory m_textureImageDeviceMemory;
+        //VkImageView m_textureImageView;
         VkSampler m_textureSampler;
 
         // Note: Fences synchronize c++ calls with gpu operations

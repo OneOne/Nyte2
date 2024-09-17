@@ -73,30 +73,30 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
         //if (mesh->getMaterialCount() > 0)
         //{
         //    const ofbx::Material* material = mesh->getMaterial(0);
-
+        //
         //    auto it = allMaterialIndices.find(material->id);
         //    if (it == allMaterialIndices.end())
         //    {
         //        // Add new material
         //        FBXMaterial fbxMaterial;
-
+        //
         //        char tmp[1024];
-
+        //
         //        material->getTexture(ofbx::Texture::DIFFUSE)->getFileName().toString(tmp);
         //        fbxMaterial.diffuse = std::string(tmp);
-
+        //
         //        material->getTexture(ofbx::Texture::NORMAL)->getFileName().toString(tmp);
         //        fbxMaterial.normal = std::string(tmp);
-
+        //
         //        material->getTexture(ofbx::Texture::SPECULAR)->getFileName().toString(tmp);
         //        fbxMaterial.specular = std::string(tmp);
-
+        //
         //        material->getTexture(ofbx::Texture::SHININESS)->getFileName().toString(tmp);
         //        fbxMaterial.shininess = std::string(tmp);
-
+        //
         //        _fbx.materials.push_back(fbxMaterial);
         //        int materialIndex = _fbx.materials.size() - 1;
-
+        //
         //        allMaterialIndices[material->id] = materialIndex;
         //        fbxMesh.materialIndex = materialIndex;
         //    }

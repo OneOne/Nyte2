@@ -97,13 +97,13 @@ struct FBXMaterial
     std::string diffuse;
     std::string normal;
     std::string specular;
-    std::string shininess;
+    std::string glossiness;
 };
 struct FBXScene
 {
     std::string filePath;
     std::vector<FBXMesh> meshes;
-    std::vector<FBXMaterial> materials;
+    //std::vector<FBXMaterial> materials;
 };
 
 class FBXHelper

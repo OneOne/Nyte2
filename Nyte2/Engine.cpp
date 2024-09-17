@@ -106,8 +106,8 @@ namespace Nyte
         createIndexBuffer();
         createUniformBuffers();
         createTextureSampler();
-        createTextureImage();
-        createTextureImageView();
+        //createTextureImage();
+        //createTextureImageView();
         //createDescriptorPool();
         //createDescriptorSets();
         //createCommandBuffers();
@@ -121,14 +121,14 @@ namespace Nyte
         destroySwapchain();
 
         vkDestroySampler(m_logicalDevice, m_textureSampler, nullptr);
-        vkDestroyImageView(m_logicalDevice, m_textureImageView, nullptr);
-        vkDestroyImage(m_logicalDevice, m_textureImage, nullptr);
-        vkFreeMemory(m_logicalDevice, m_textureImageDeviceMemory, nullptr);
+        //vkDestroyImageView(m_logicalDevice, m_textureImageView, nullptr);
+        //vkDestroyImage(m_logicalDevice, m_textureImage, nullptr);
+        //vkFreeMemory(m_logicalDevice, m_textureImageDeviceMemory, nullptr);
 
         //vkDestroyDescriptorSetLayout(m_logicalDevice, m_descriptorSetLayout, nullptr);
 
         destroySemaphoresAndFences();
-        
+
         vkDestroyBuffer(m_logicalDevice, m_indexBuffer, nullptr);
         vkFreeMemory(m_logicalDevice, m_indexBufferDeviceMemory, nullptr);
         vkDestroyBuffer(m_logicalDevice, m_vertexBuffer, nullptr);
@@ -790,7 +790,7 @@ namespace Nyte
 
         createSwapchain();
         createImageViews();
-        
+
         //createRenderPass();
         //createGraphicsPipeline();
         //createColorResources();
@@ -1359,7 +1359,7 @@ namespace Nyte
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.image = m_textureImage;
+        barrier.image = _image;
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.levelCount = m_texture.mipLevels;
@@ -1675,7 +1675,10 @@ namespace Nyte
 
         // Descriptor Set Layout
         m_gbuffer.m_descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_VERTEX_BIT);
-        m_gbuffer.m_descriptorSetLayout.addSamplerBinding();
+        for (u32 j = 0; j < m_textures.size(); ++j)
+        {
+            m_gbuffer.m_descriptorSetLayout.addSamplerBinding();
+        }
         m_gbuffer.m_descriptorSetLayout.createDescriptorSetLayout(m_logicalDevice);
 
         // Pipeline layout
@@ -1701,7 +1704,10 @@ namespace Nyte
         {
             // Write descriptor sets
             m_gbuffer.m_descriptorSets.addWriteBufferDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, m_uniformBuffers[i], 0, sizeof(UBO_ModelViewProj));
-            m_gbuffer.m_descriptorSets.addWriteImageDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_textureImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            for (u32 j = 0; j < m_textures.size(); ++j)
+            {
+                m_gbuffer.m_descriptorSets.addWriteImageDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 1 + j, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_textures[j].m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
             m_gbuffer.m_descriptorSets.updateDescriptorSets(m_logicalDevice);
         }
 
@@ -1733,7 +1739,7 @@ namespace Nyte
 
         // Descriptor Sets
         m_gbuffer.m_descriptorSets.freeDescriptorSets(m_logicalDevice);
-        
+
         // Framebuffer
         m_gbuffer.m_framebuffer.destroyFramebuffer(m_logicalDevice);
 
@@ -1745,7 +1751,7 @@ namespace Nyte
 
         // Descriptor Set Layout
         m_gbuffer.m_descriptorSetLayout.destroyDescriptorSetLayout(m_logicalDevice);
-        
+
         // Shaders
         m_gbuffer.m_fragmentShader.destroyShader(m_logicalDevice);
         m_gbuffer.m_vertexShader.destroyShader(m_logicalDevice);
@@ -2049,7 +2055,8 @@ namespace Nyte
 
         unordered_map<Vertex, u32> verticesMap{}; // <Vertex, vertexIndex>
 
-        for (const FBXMesh& mesh : fbx.meshes)
+        //for (const FBXMesh& mesh : fbx.meshes)
+        const FBXMesh& mesh = fbx.meshes[0];
         {
             for (FBXVertex v : mesh.m_vertices)
             {
@@ -2069,6 +2076,28 @@ namespace Nyte
             }
             m_indices.insert(m_indices.end(), mesh.m_indices.begin(), mesh.m_indices.end());
         }
+
+        FBXMaterial material;
+        material.diffuse = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Albedo.jpg";
+        material.normal = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Normal_LOD0.jpg";
+        material.specular = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Specular.jpg";
+        material.glossiness = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Gloss.jpg";
+
+        ImageAttachment diffuseMap = ImageAttachment::colorAttachment();
+        diffuseMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.diffuse, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        m_textures.push_back(diffuseMap);
+
+        ImageAttachment normalMap = ImageAttachment::colorAttachment();
+        normalMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.normal, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        m_textures.push_back(normalMap);
+
+        ImageAttachment specularMap = ImageAttachment::colorAttachment();
+        specularMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.specular, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        m_textures.push_back(specularMap);
+
+        ImageAttachment glossinessMap = ImageAttachment::colorAttachment();
+        glossinessMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.glossiness, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        m_textures.push_back(glossinessMap);
 
         cout << "<< Engine::loadModel\n";
     }
@@ -2178,60 +2207,60 @@ namespace Nyte
                 m_uniformBuffersDeviceMemory[i]);
         }
     }
-    void Engine::createTextureImage()
-    {
-    //m_texture.path = TEXTURE_PATH;
-        m_texture.path = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Albedo.jpg";
-        FileHelper::loadImage(m_texture);
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-
-        createBuffer(
-            m_texture.size,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBuffer,
-            stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, m_texture.size, 0, &data);
-        memcpy(data, m_texture.data, (u32)m_texture.size);
-        vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
-
-        FileHelper::unloadImage(m_texture);
-
-        u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
-
-        createImage(
-            (u32)m_texture.width,
-            (u32)m_texture.height,
-            (u32)m_texture.mipLevels,
-            VK_SAMPLE_COUNT_1_BIT,
-            VK_FORMAT_R8G8B8A8_SRGB,
-            VK_IMAGE_TILING_OPTIMAL, // optimal pixel order for access (otherwise, it would be linear = pixels ordered row per row)
-            VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, // transfer src/dst for mips blit
-            2,
-            &queueIndices[0],
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            m_textureImage,
-            m_textureImageDeviceMemory);
-
-        transitionImageLayoutToTransfer(m_textureImage, m_texture.mipLevels);
-
-        copyBufferToImage(stagingBuffer, m_textureImage, (u32)m_texture.width, (u32)m_texture.height);
-
-        transitionImageLayoutFromTransferToGraphics(m_textureImage, m_texture.mipLevels);
-
-        generateMipmaps(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, (u32)m_texture.width, (u32)m_texture.height, (u32)m_texture.mipLevels);
-
-        vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
-        vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
-    }
-    void Engine::createTextureImageView()
-    {
-        createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, (u32)m_texture.mipLevels, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView);
-    }
+    //void Engine::createTextureImage()
+    //{
+    ////m_texture.path = TEXTURE_PATH;
+    //    m_texture.path = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Albedo.jpg";
+    //    FileHelper::loadImage(m_texture);
+    //
+    //    VkBuffer stagingBuffer;
+    //    VkDeviceMemory stagingBufferMemory;
+    //
+    //    createBuffer(
+    //        m_texture.size,
+    //        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    //        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    //        stagingBuffer,
+    //        stagingBufferMemory);
+    //
+    //    void* data;
+    //    vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, m_texture.size, 0, &data);
+    //    memcpy(data, m_texture.data, (u32)m_texture.size);
+    //    vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
+    //
+    //    FileHelper::unloadImage(m_texture);
+    //
+    //    u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
+    //
+    //    createImage(
+    //        (u32)m_texture.width,
+    //        (u32)m_texture.height,
+    //        (u32)m_texture.mipLevels,
+    //        VK_SAMPLE_COUNT_1_BIT,
+    //        VK_FORMAT_R8G8B8A8_SRGB,
+    //        VK_IMAGE_TILING_OPTIMAL, // optimal pixel order for access (otherwise, it would be linear = pixels ordered row per row)
+    //        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, // transfer src/dst for mips blit
+    //        2,
+    //        &queueIndices[0],
+    //        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    //        m_textureImage,
+    //        m_textureImageDeviceMemory);
+    //
+    //    transitionImageLayoutToTransfer(m_textureImage, m_texture.mipLevels);
+    //
+    //    copyBufferToImage(stagingBuffer, m_textureImage, (u32)m_texture.width, (u32)m_texture.height);
+    //
+    //    transitionImageLayoutFromTransferToGraphics(m_textureImage, m_texture.mipLevels);
+    //
+    //    generateMipmaps(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, (u32)m_texture.width, (u32)m_texture.height, (u32)m_texture.mipLevels);
+    //
+    //    vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
+    //    vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
+    //}
+    //void Engine::createTextureImageView()
+    //{
+    //    createImageView(m_textureImage, VK_FORMAT_R8G8B8A8_SRGB, (u32)m_texture.mipLevels, VK_IMAGE_ASPECT_COLOR_BIT, m_textureImageView);
+    //}
 
     void Engine::createTextureSampler()
     {
@@ -2382,7 +2411,7 @@ namespace Nyte
         m_imageAvailableSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
         m_renderFinishedSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
         m_gbufferSemaphores.createSemaphores(m_logicalDevice, MAX_FRAMES_IN_FLIGHT);
-        
+
         // Fences
         m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
         m_imagesInFlightFences.resize(m_swapchainImages.size(), VK_NULL_HANDLE);
@@ -2397,11 +2426,13 @@ namespace Nyte
     }
     void Engine::destroySemaphoresAndFences()
     {
+        // Fences
         for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
         {
             vkDestroyFence(m_logicalDevice, m_inFlightFences[i], nullptr);
         }
 
+        // Semaphopres
         m_gbufferSemaphores.destroySemaphores(m_logicalDevice);
         m_renderFinishedSemaphores.destroySemaphores(m_logicalDevice);
         m_imageAvailableSemaphores.destroySemaphores(m_logicalDevice);
@@ -2417,7 +2448,7 @@ namespace Nyte
 
         UBO_ModelViewProj ubo_MVP{};
         ubo_MVP.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        ubo_MVP.view = glm::lookAt(glm::vec3(20000.0f, 20000.0f, 20000.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        ubo_MVP.view = glm::lookAt(glm::vec3(15000.0f, 15000.0f, 15000.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ubo_MVP.proj = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10000000.0f);
 
         ubo_MVP.proj[1][1] *= -1; // convert OpenGL coords to Vulkan coords

@@ -53,21 +53,53 @@ void main()
 {
     vec2 splitScreenUV = inUVs * 2.0f;
     vec2 textureUV = mod(inUVs * 2.0f, 1.0f);
+
+	vec4 diffuse = resolve(colorSampler, textureUV); 
+	vec4 normal = resolve(normalSampler, textureUV); 
+	vec4 specGloss = resolve(specGlossSampler, textureUV); 
+
     if(splitScreenUV.x<1.0f && splitScreenUV.y<1.0f)
     {
-        outColor = resolve(colorSampler, textureUV); 
+        outColor = diffuse;
     }
     else if(splitScreenUV.x>1.0f && splitScreenUV.y<1.0f)
     {
-        outColor = resolve(normalSampler, textureUV); 
+        outColor = normal; 
     }
     else if(splitScreenUV.x<1.0f && splitScreenUV.y>1.0f)
     {
-        outColor = resolve(specGlossSampler, textureUV); 
+        outColor = specGloss; 
     }
     else
     {
-        // computePBR
+//        // computePBR
+//        float3 N = normalize(input.Normal);
+//		float3 V = normalize(ubo.camPos - input.WorldPos);
+//
+//		float roughness = material.roughness;
+//
+//		// Add striped pattern to roughness based on vertex position
+//	#ifdef ROUGHNESS_PATTERN
+//		roughness = max(roughness, step(frac(input.WorldPos.y * 2.02), 0.5));
+//	#endif
+//
+//		// Specular contribution
+//		float3 Lo = float3(0.0, 0.0, 0.0);
+//		for (int i = 0; i < 4; i++) {
+//			float3 L = normalize(uboParams.lights[i].xyz - input.WorldPos);
+//			Lo += BRDF(L, V, N, material.metallic, roughness);
+//		};
+//
+//		// Combine with ambient
+//		float3 color = materialcolor() * 0.02;
+//		color += Lo;
+//
+//		// Gamma correct
+//		color = pow(color, float3(0.4545, 0.4545, 0.4545));
+//
+//		return float4(color, 1.0);
+//
+
         outColor = vec4(1,1,1,1);
     }
 }
