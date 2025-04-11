@@ -17,8 +17,7 @@
 
 
 #include "Common.h"
-//#include "VertexBasic.h" // glm
-#include "VertexModel.h" // glm
+#include "VertexModel.h"
 #include "FileHelper.h"
 
 const std::string MODEL_PATH = "Resources/Models/viking_room.obj";
@@ -97,6 +96,13 @@ namespace Nyte
         alignas(16) glm::mat4 proj;
     };
 
+    struct alignas(16) UBO_Deffered // Uniform buffer object
+    {
+        alignas(16) glm::vec4 cameraPosition;
+        alignas(16) glm::vec4 lightPosition;
+        alignas(16) glm::vec4 lightDirection;
+    };
+
     class VulkanHelper
     {
     public:
@@ -138,10 +144,10 @@ namespace Nyte
             VkCommandPool _commandPool,
             VkQueue _queue,
             VkCommandBuffer _commandBuffer,
-            u32 _signalSemaphoreCount = 0, 
-            VkSemaphore* _signalSemaphore = nullptr, 
-            u32 _waitSemaphoreCount = 0, 
-            VkSemaphore* _waitSemaphore = nullptr, 
+            u32 _signalSemaphoreCount = 0,
+            VkSemaphore* _signalSemaphore = nullptr,
+            u32 _waitSemaphoreCount = 0,
+            VkSemaphore* _waitSemaphore = nullptr,
             VkPipelineStageFlags* _waitStageMask = nullptr)
         {
             vkEndCommandBuffer(_commandBuffer);
@@ -762,7 +768,7 @@ namespace Nyte
         std::vector<VkWriteDescriptorSet> m_writeDescriptorSets;
         std::vector<WriteInfo> m_infos;
 
-        inline void addWriteBufferDescriptorSet(VkDescriptorSet _dstSet, u32 _bindingIndex, VkDescriptorType _descriptorType, VkBuffer _buffer, u32 _bufferOffset, u32 _bufferRange)
+        inline void addWriteBufferDescriptorSet(VkDescriptorSet _dstSet, u32 _bindingIndex, VkDescriptorType _descriptorType, VkBuffer _buffer, VkDeviceSize _bufferOffset, VkDeviceSize _bufferRange)
         {
             WriteInfo writeInfo;
             writeInfo.m_bufferInfo = { _buffer, _bufferOffset, _bufferRange };
@@ -852,6 +858,55 @@ namespace Nyte
             m_infos.clear();
         }
     };
+    struct UniformBuffers
+    {
+        std::vector<VkBuffer> m_uniformBuffers;
+        std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
+
+        inline void createUniformBuffers(VkDevice _device, VkPhysicalDevice _physicalDevice, VkDeviceSize _bufferSize, u32 _bufferCount)
+        {
+            m_uniformBuffers.resize(_bufferCount);
+            m_uniformBuffersDeviceMemory.resize(_bufferCount);
+
+            for (u32 i = 0; i < _bufferCount; i++)
+            {
+                VkBufferCreateInfo bufferInfo{};
+                bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                bufferInfo.size = _bufferSize;
+                bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+                bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+                VCR(vkCreateBuffer(_device, &bufferInfo, nullptr, &m_uniformBuffers[i]), "Failed to create buffer.");
+
+                VkMemoryRequirements memRequirements;
+                vkGetBufferMemoryRequirements(_device, m_uniformBuffers[i], &memRequirements);
+
+                VkMemoryAllocateInfo allocInfo{};
+                allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+                allocInfo.allocationSize = memRequirements.size;
+                allocInfo.memoryTypeIndex = VulkanHelper::findMemoryType(_device, _physicalDevice, memRequirements, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+                VCR(vkAllocateMemory(_device, &allocInfo, nullptr, &m_uniformBuffersDeviceMemory[i]), "Failed to allocate buffer device memory.");
+
+                vkBindBufferMemory(_device, m_uniformBuffers[i], m_uniformBuffersDeviceMemory[i], 0);
+            }
+        }
+        inline void destroyUniformBuffers(VkDevice _device)
+        {
+            u32 bufferCount = (u32)m_uniformBuffers.size();
+            for (u32 i = 0; i < bufferCount; i++)
+            {
+                vkDestroyBuffer(_device, m_uniformBuffers[i], nullptr);
+                vkFreeMemory(_device, m_uniformBuffersDeviceMemory[i], nullptr);
+            }
+        }
+
+        inline VkBuffer& operator[](u32 _i)
+        {
+            return m_uniformBuffers[_i];
+        }
+    };
+
 
     struct PipelineLayout
     {
@@ -957,7 +1012,7 @@ namespace Nyte
 
             VkPipelineDepthStencilStateCreateInfo depthAndStencil{};
             depthAndStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-            if(m_depthTestEnable)
+            if (m_depthTestEnable)
             {
                 depthAndStencil.depthTestEnable = VK_TRUE;
                 depthAndStencil.depthWriteEnable = VK_TRUE;
@@ -1088,7 +1143,7 @@ namespace Nyte
     struct Semaphores
     {
         std::vector<VkSemaphore> m_semaphores;
-        
+
         inline void createSemaphores(VkDevice _device, u32 _count)
         {
             VkSemaphoreCreateInfo semaphoreCreateInfo{};
@@ -1102,7 +1157,7 @@ namespace Nyte
         }
         inline void destroySemaphores(VkDevice _device)
         {
-            for(VkSemaphore& semaphore : m_semaphores)
+            for (VkSemaphore& semaphore : m_semaphores)
                 vkDestroySemaphore(_device, semaphore, nullptr);
         }
 
@@ -1114,6 +1169,7 @@ namespace Nyte
 
     struct GBuffer
     {
+        ImageAttachment m_worldPosAttachment;
         ImageAttachment m_colorAttachment;
         ImageAttachment m_normalAttachment;
         ImageAttachment m_specGlossAttachment;
@@ -1144,6 +1200,7 @@ namespace Nyte
 
         DescriptorSetLayout m_descriptorSetLayout;
         DescriptorSets m_descriptorSets;
+        UniformBuffers m_uniformBuffers;
 
         PipelineLayout m_pipelineLayout;
         Pipeline m_pipeline;
@@ -1151,6 +1208,46 @@ namespace Nyte
         CommandBuffers m_cmdBuffers;
     };
 
+    struct Model
+    {
+        struct Mesh
+        {
+            std::vector<Vertex> m_vertices;
+            std::vector<u32> m_indices;
+
+            VkBuffer m_vertexBuffer;
+            VkDeviceMemory m_vertexBufferDeviceMemory;
+            VkBuffer m_indexBuffer;
+            VkDeviceMemory m_indexBufferDeviceMemory;
+        };
+        struct Material
+        {
+            // TODO: rework this with some "MaterialTexture / MaterialConstant" derived classes
+            static constexpr u32 TextureCount = 4; // Albedo, Normal, Metalness, Roughness
+            enum MaterialType
+            {
+                TextureBased = 0,
+                ConstantBased
+            };
+            struct MaterialConstants
+            {
+                // default values: gold (source: https://seblagarde.wordpress.com/2011/08/17/feeding-a-physical-based-lighting-mode/)
+                glm::vec3 m_albedo{ 1.0f, 0.765557f, 0.336057f };
+                float metallic{1.0f};
+                float roughness{0.1f};
+            };
+
+            MaterialType m_type;
+            std::vector<ImageAttachment> m_textures;
+
+            MaterialConstants m_constants;
+            std::vector<VkBuffer> m_constantsUBO;
+            std::vector<VkDeviceMemory> m_constantsUBODeviceMemory;
+        };
+
+        Mesh m_mesh;
+        Material m_material;
+    };
 
     class Engine 
     {
@@ -1216,6 +1313,8 @@ namespace Nyte
         void createCommandPools();
 
         void createOffscreenGBuffer();
+        void buildOffscreenCommandBuffer(const u32 _passIndex, Model& _model);
+        void unbuildOffscreenCommandBuffer(Model& _model);
         void destroyOffscreenGBuffer();
 
         void createDeferredPipepline();
@@ -1227,12 +1326,16 @@ namespace Nyte
         bool hasStencilComponent(VkFormat _format);
         VkFormat findDepthFormat();
 
-        void loadModel();
+        void loadOBJModel(std::vector<Model>& _models, std::string _objPath);
+        void loadFBXModel(std::vector<Model>& _models, std::string _fbxPath);
 
         u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);
-        void createVertexBuffer();
-        void createIndexBuffer();
+        void createVertexBuffer(Model& _model);
+        void destroyVertexBuffer(Model& _model);
+        void createIndexBuffer(Model& _model);
+        void destroyIndexBuffer(Model& _model);
         void createUniformBuffers();
+        void destroyUniformBuffers();
         //void createTextureImage();
         //void createTextureImageView();
         void createTextureSampler();
@@ -1276,17 +1379,14 @@ namespace Nyte
         Semaphores m_gbufferSemaphores;
 
 
-        std::vector<Vertex> m_vertices;
-        std::vector<u32> m_indices;
-        VkBuffer m_vertexBuffer;
-        VkDeviceMemory m_vertexBufferDeviceMemory;
-        VkBuffer m_indexBuffer;
-        VkDeviceMemory m_indexBufferDeviceMemory;
+        //std::vector<Vertex> m_vertices;
+        //std::vector<u32> m_indices;
+        std::vector<Model> m_models;
 
         std::vector<VkBuffer> m_uniformBuffers;
         std::vector<VkDeviceMemory> m_uniformBuffersDeviceMemory;
 
-        std::vector<ImageAttachment> m_textures;
+        //std::vector<ImageAttachment> m_textures;
 
         RawImage m_texture;
         //VkImage m_textureImage;

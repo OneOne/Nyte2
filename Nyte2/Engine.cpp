@@ -9,6 +9,8 @@
 #include <limits>
 #include <algorithm>
 #include <unordered_map>
+#include <fstream>
+
 #include "FBXHelper.h"
 
 using namespace std;
@@ -101,9 +103,19 @@ namespace Nyte
         //createColorResources();
         //createDepthResources();
         //createFramebuffers();
-        loadModel();
-        createVertexBuffer();
-        createIndexBuffer();
+
+        loadFBXModel(m_models, "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw.fbx");
+        loadFBXModel(m_models, "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw.fbx");
+        //loadFBXModel(m_models, "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw.fbx");
+        //loadFBXModel(m_models, "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw.fbx");
+
+        for(Model& model : m_models)
+        {
+            createVertexBuffer(model);
+            createIndexBuffer(model);
+        }
+
+
         createUniformBuffers();
         createTextureSampler();
         //createTextureImage();
@@ -129,10 +141,15 @@ namespace Nyte
 
         destroySemaphoresAndFences();
 
-        vkDestroyBuffer(m_logicalDevice, m_indexBuffer, nullptr);
-        vkFreeMemory(m_logicalDevice, m_indexBufferDeviceMemory, nullptr);
-        vkDestroyBuffer(m_logicalDevice, m_vertexBuffer, nullptr);
-        vkFreeMemory(m_logicalDevice, m_vertexBufferDeviceMemory, nullptr);
+        for (Model& model : m_models)
+        {
+            destroyIndexBuffer(model);
+            destroyVertexBuffer(model);
+
+            for(ImageAttachment& imageAttachment : model.m_material.m_textures)
+                imageAttachment.destroyImageAttachment(m_logicalDevice);
+        }
+
         vkDestroyCommandPool(m_logicalDevice, m_transferCommandPool, nullptr);
         vkDestroyCommandPool(m_logicalDevice, m_graphicsCommandPool, nullptr);
 
@@ -750,11 +767,12 @@ namespace Nyte
         //if (m_graphicsCommandBuffers.size() > 0)
         //    vkFreeCommandBuffers(m_logicalDevice, m_graphicsCommandPool, (u32)m_graphicsCommandBuffers.size(), m_graphicsCommandBuffers.data());
 
-        for (u32 i = 0; i < m_swapchainImages.size(); i++)
-        {
-            vkDestroyBuffer(m_logicalDevice, m_uniformBuffers[i], nullptr);
-            vkFreeMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[i], nullptr);
-        }
+        //for (u32 i = 0; i < m_swapchainImages.size(); i++)
+        //{
+        //    vkDestroyBuffer(m_logicalDevice, m_uniformBuffers[i], nullptr);
+        //    vkFreeMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[i], nullptr);
+        //}
+        destroyUniformBuffers();
         //vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr); // also free descriptor sets allocation
 
         //for (VkFramebuffer& framebuffer : m_swapchainFramebuffers)
@@ -1589,6 +1607,15 @@ namespace Nyte
 
     void Engine::createOffscreenGBuffer()
     {
+        // WorldPos
+        m_gbuffer.m_worldPosAttachment = ImageAttachment::colorAttachment();
+        m_gbuffer.m_worldPosAttachment.m_format = m_swapchainImageFormat;
+        m_gbuffer.m_worldPosAttachment.m_extent = m_swapchainExtent;
+        m_gbuffer.m_worldPosAttachment.m_mipLevels = 1;
+        m_gbuffer.m_worldPosAttachment.m_sampleCount = m_msaaSamples;
+
+        m_gbuffer.m_worldPosAttachment.createImageAttachment(m_logicalDevice, m_physicalDevice);
+
         // Color
         m_gbuffer.m_colorAttachment = ImageAttachment::colorAttachment();
         m_gbuffer.m_colorAttachment.m_format = m_swapchainImageFormat;
@@ -1627,14 +1654,16 @@ namespace Nyte
 
         // Render pass
         m_gbuffer.m_renderPass.m_colorAttachmentReferences = {
-            m_gbuffer.m_colorAttachment.getAttachmentDescriptionRef(0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
-            m_gbuffer.m_normalAttachment.getAttachmentDescriptionRef(1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
-            m_gbuffer.m_specGlossAttachment.getAttachmentDescriptionRef(2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+            m_gbuffer.m_worldPosAttachment.getAttachmentDescriptionRef(0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+            m_gbuffer.m_colorAttachment.getAttachmentDescriptionRef(1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+            m_gbuffer.m_normalAttachment.getAttachmentDescriptionRef(2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),
+            m_gbuffer.m_specGlossAttachment.getAttachmentDescriptionRef(3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
         };
         m_gbuffer.m_renderPass.m_depthStencilAttachmentReferences = {
-            m_gbuffer.m_depthAttachment.getAttachmentDescriptionRef(3, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            m_gbuffer.m_depthAttachment.getAttachmentDescriptionRef(4, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         };
         m_gbuffer.m_renderPass.m_attachmentDescriptions = {
+            m_gbuffer.m_worldPosAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
             m_gbuffer.m_colorAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
             m_gbuffer.m_normalAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
             m_gbuffer.m_specGlossAttachment.getAttachmentDescription(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
@@ -1644,13 +1673,20 @@ namespace Nyte
             RenderPass::colorDependency(),
             RenderPass::colorDependency(),
             RenderPass::colorDependency(),
+            RenderPass::colorDependency(),
             RenderPass::depthDependency(),
         };
 
         m_gbuffer.m_renderPass.createRenderPass(m_logicalDevice);
 
         // Framebuffer
-        m_gbuffer.m_framebuffer.m_attachments = { m_gbuffer.m_colorAttachment, m_gbuffer.m_normalAttachment, m_gbuffer.m_specGlossAttachment, m_gbuffer.m_depthAttachment };
+        m_gbuffer.m_framebuffer.m_attachments = { 
+            m_gbuffer.m_worldPosAttachment, 
+            m_gbuffer.m_colorAttachment, 
+            m_gbuffer.m_normalAttachment, 
+            m_gbuffer.m_specGlossAttachment, 
+            m_gbuffer.m_depthAttachment 
+        };
         m_gbuffer.m_framebuffer.m_renderPass = m_gbuffer.m_renderPass;
         m_gbuffer.m_framebuffer.m_extent = m_swapchainExtent;
         m_gbuffer.m_framebuffer.createFramebuffer(m_logicalDevice);
@@ -1674,8 +1710,9 @@ namespace Nyte
         vertexDescription.setup();
 
         // Descriptor Set Layout
-        m_gbuffer.m_descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_VERTEX_BIT);
-        for (u32 j = 0; j < m_textures.size(); ++j)
+        m_gbuffer.m_descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_VERTEX_BIT);    // UBO_ModelViewProj
+        //m_gbuffer.m_descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_FRAGMENT_BIT);  // UBO_MaterialConstants
+        for (u32 j = 0; j < Model::Material::TextureCount; ++j)
         {
             m_gbuffer.m_descriptorSetLayout.addSamplerBinding();
         }
@@ -1704,10 +1741,10 @@ namespace Nyte
         {
             // Write descriptor sets
             m_gbuffer.m_descriptorSets.addWriteBufferDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, m_uniformBuffers[i], 0, sizeof(UBO_ModelViewProj));
-            for (u32 j = 0; j < m_textures.size(); ++j)
-            {
-                m_gbuffer.m_descriptorSets.addWriteImageDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 1 + j, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_textures[j].m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            }
+            //for (u32 j = 0; j < Model::Material::TextureCount; ++j)
+            //{
+            //    m_gbuffer.m_descriptorSets.addWriteImageDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 1 + j, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_textures[j].m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            //}
             m_gbuffer.m_descriptorSets.updateDescriptorSets(m_logicalDevice);
         }
 
@@ -1715,25 +1752,95 @@ namespace Nyte
         m_gbuffer.m_cmdBuffers.allocateCommands(m_logicalDevice, m_graphicsCommandPool, swapchainSize);
         m_gbuffer.m_cmdBuffers.m_pipeline = m_gbuffer.m_pipeline;
         m_gbuffer.m_cmdBuffers.m_framebuffer = m_gbuffer.m_framebuffer;
-
+        
         for (u32 i = 0; i < swapchainSize; ++i)
         {
             m_gbuffer.m_cmdBuffers.beginPass(i);
 
-            // bind vertex buffer
-            VkBuffer vertexBuffers[] = { m_vertexBuffer };
-            VkDeviceSize offsets[] = { 0 };
-            vkCmdBindVertexBuffers(m_gbuffer.m_cmdBuffers[i], 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(m_gbuffer.m_cmdBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-            vkCmdBindDescriptorSets(m_gbuffer.m_cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer.m_pipelineLayout.m_pipelineLayout, 0, 1, &m_gbuffer.m_descriptorSets.m_descriptorSets[i], 0, nullptr);
-
-            vkCmdDrawIndexed(m_gbuffer.m_cmdBuffers[i], (u32)m_indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
-
+            // Build command buffers for each model
+            for (Model& model : m_models)
+                buildOffscreenCommandBuffer(i, model);
+        //
+        //    // bind vertex buffer
+        //    VkBuffer vertexBuffers[] = { m_vertexBuffer };
+        //    VkDeviceSize offsets[] = { 0 };
+        //    vkCmdBindVertexBuffers(m_gbuffer.m_cmdBuffers[i], 0, 1, vertexBuffers, offsets);
+        //    vkCmdBindIndexBuffer(m_gbuffer.m_cmdBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        //    vkCmdBindDescriptorSets(m_gbuffer.m_cmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer.m_pipelineLayout.m_pipelineLayout, 0, 1, &m_gbuffer.m_descriptorSets.m_descriptorSets[i], 0, nullptr);
+        //
+        //    vkCmdDrawIndexed(m_gbuffer.m_cmdBuffers[i], (u32)m_model.mesh.indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
+        //
             m_gbuffer.m_cmdBuffers.endPass(i);
         }
     }
+    void Engine::buildOffscreenCommandBuffer(const u32 _passIndex, Model& _model)
+    {
+        //// Create Material Constants UBO
+        //VkDeviceSize materialConstantsBufferSize = sizeof(Model::Material::MaterialConstants);
+        //if(_model.m_material.m_type == Model::Material::MaterialType::ConstantBased)
+        //{
+        //    _model.m_material.m_constantsUBO.resize(m_swapchainImages.size());
+        //    _model.m_material.m_constantsUBODeviceMemory.resize(m_swapchainImages.size());
+        //
+        //    for (u32 i = 0; i < m_swapchainImages.size(); i++)
+        //    {
+        //        createBuffer(
+        //            materialConstantsBufferSize,
+        //            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        //            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        //            _model.m_material.m_constantsUBO[i],
+        //            _model.m_material.m_constantsUBODeviceMemory[i]);
+        //    }
+        //}
+
+        // Descriptor Sets - Material Textures
+        u32 swapchainSize = (u32)m_swapchainImages.size();
+        
+        //for (u32 i = 0; i < swapchainSize; ++i)
+        {
+            // Write descriptor sets
+            if(_model.m_material.m_type == Model::Material::MaterialType::TextureBased)
+            {
+                for (u32 j = 0; j < Model::Material::TextureCount; ++j)
+                {
+                    m_gbuffer.m_descriptorSets.addWriteImageDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[_passIndex], 1 + j, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, _model.m_material.m_textures[j].m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                }
+            }
+            //else if(_model.m_material.m_type == Model::Material::MaterialType::ConstantBased)
+            //{
+            //    m_gbuffer.m_descriptorSets.addWriteBufferDescriptorSet(m_gbuffer.m_descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _model.m_material.m_constantsUBO[i], 0, materialConstantsBufferSize);
+            //}
+            m_gbuffer.m_descriptorSets.updateDescriptorSets(m_logicalDevice);
+        }
+
+        // Command buffers
+        VkBuffer vertexBuffers[] = { _model.m_mesh.m_vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(m_gbuffer.m_cmdBuffers[_passIndex], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(m_gbuffer.m_cmdBuffers[_passIndex], _model.m_mesh.m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindDescriptorSets(m_gbuffer.m_cmdBuffers[_passIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer.m_pipelineLayout.m_pipelineLayout, 0, 1, &m_gbuffer.m_descriptorSets.m_descriptorSets[_passIndex], 0, nullptr);
+
+        vkCmdDrawIndexed(m_gbuffer.m_cmdBuffers[_passIndex], (u32)_model.m_mesh.m_indices.size(), 1, 0, 0, 0); // indexCount, instanceCount, firstIndex, vertexOffset, firstInstance
+
+    }
+    void Engine::unbuildOffscreenCommandBuffer(Model& _model)
+    {
+        if (_model.m_material.m_type == Model::Material::MaterialType::ConstantBased)
+        {
+            for (u32 i = 0; i < m_swapchainImages.size(); i++)
+            {
+                vkDestroyBuffer(m_logicalDevice, _model.m_material.m_constantsUBO[i], nullptr);
+                vkFreeMemory(m_logicalDevice, _model.m_material.m_constantsUBODeviceMemory[i], nullptr);
+            }
+        }
+    }
+
     void Engine::destroyOffscreenGBuffer()
     {
+        // Models
+        for (Model& model : m_models)
+            unbuildOffscreenCommandBuffer(model);
+        
         // Command buffer
         m_gbuffer.m_cmdBuffers.freeCommands(m_logicalDevice, m_graphicsCommandPool);
 
@@ -1764,6 +1871,7 @@ namespace Nyte
         m_gbuffer.m_specGlossAttachment.destroyImageAttachment(m_logicalDevice);
         m_gbuffer.m_normalAttachment.destroyImageAttachment(m_logicalDevice);
         m_gbuffer.m_colorAttachment.destroyImageAttachment(m_logicalDevice);
+        m_gbuffer.m_worldPosAttachment.destroyImageAttachment(m_logicalDevice);
     }
 
     void Engine::createDeferredPipepline()
@@ -1814,6 +1922,8 @@ namespace Nyte
         VertexDescription emptyVertexDescription;
 
         // Descriptor Set Layout
+        m_deferred.m_descriptorSetLayout.addUniformBufferBinding(VK_SHADER_STAGE_FRAGMENT_BIT); // UBO_Deffered
+        m_deferred.m_descriptorSetLayout.addSamplerBinding(); // worldPosSampler
         m_deferred.m_descriptorSetLayout.addSamplerBinding(); // colorSampler
         m_deferred.m_descriptorSetLayout.addSamplerBinding(); // normalSampler
         m_deferred.m_descriptorSetLayout.addSamplerBinding(); // specGlossSampler
@@ -1837,15 +1947,20 @@ namespace Nyte
 
         u32 swapchainSize = (u32)m_swapchainImages.size();
 
+        // Uniform buffers
+        m_deferred.m_uniformBuffers.createUniformBuffers(m_logicalDevice, m_physicalDevice, sizeof(UBO_Deffered), swapchainSize);
+
         // Descriptor Sets
         m_deferred.m_descriptorSets.m_descriptorSetLayout = m_deferred.m_descriptorSetLayout;
         m_deferred.m_descriptorSets.allocateDescriptorSets(m_logicalDevice, swapchainSize);
         for (u32 i = 0; i < swapchainSize; ++i)
         {
             // Write descriptor sets
-            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_colorAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_normalAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_specGlossAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.addWriteBufferDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, m_deferred.m_uniformBuffers[i], 0, sizeof(UBO_Deffered));
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_worldPosAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_colorAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_normalAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            m_deferred.m_descriptorSets.addWriteImageDescriptorSet(m_deferred.m_descriptorSets.m_descriptorSets[i], 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_textureSampler, m_gbuffer.m_specGlossAttachment.m_imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             m_deferred.m_descriptorSets.updateDescriptorSets(m_logicalDevice);
         }
 
@@ -1868,11 +1983,14 @@ namespace Nyte
     }
     void Engine::destroyDeferredPipeline()
     {
-        // Command buffer
+        // Command buffers
         m_deferred.m_cmdBuffers.freeCommands(m_logicalDevice, m_graphicsCommandPool);
 
         // Descriptor Sets
         m_deferred.m_descriptorSets.freeDescriptorSets(m_logicalDevice);
+
+        // Uniform buffers
+        m_deferred.m_uniformBuffers.destroyUniformBuffers(m_logicalDevice);
 
         // Framebuffers
         m_deferred.m_framebuffers.resize(m_swapchainImageViews.size());
@@ -2010,10 +2128,8 @@ namespace Nyte
     //    }
     //}
 
-    void Engine::loadModel()
+    void Engine::loadOBJModel(std::vector<Model>& _models, string _ojbPath)
     {
-        cout << "Engine::loadModel >> \n";
-
         //RawObj model;
         //model.path = MODEL_PATH;
         //FileHelper::loadModel(model);
@@ -2047,58 +2163,152 @@ namespace Nyte
         //            m_indices.push_back(it->second);
         //    }
         //}
+    }
+    void Engine::loadFBXModel(std::vector<Model>& _models, string _fbxPath)
+    {
+        cout << "Engine::loadModel >> \n";
 
+        Model model{};
 
-        FBXScene fbx;
-        fbx.filePath = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_LOD0.fbx";
-        FBXHelper::loadFBX(fbx);
+        //string fbxPath = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_LOD0.fbx";
+        //string _fbxPath = "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw.fbx";
+        //string fbxPath = "Resources/Models/Sponza/NewSponza_Main_Yup_003.fbx";
+        string vbCachePath = _fbxPath + ".vb.cache";
+        string ibCachePath = _fbxPath + ".ib.cache";
 
-        unordered_map<Vertex, u32> verticesMap{}; // <Vertex, vertexIndex>
-
-        //for (const FBXMesh& mesh : fbx.meshes)
-        const FBXMesh& mesh = fbx.meshes[0];
+        // Read caches
+        ifstream readVBCache(vbCachePath.c_str(), ios::binary);
+        ifstream readIBCache(ibCachePath.c_str(), ios::binary);
+        if (readVBCache.is_open() && readIBCache.is_open())
         {
-            for (FBXVertex v : mesh.m_vertices)
+            cout << "\t Read cache >> \n";
+            readVBCache.seekg(0, ios::end);
+            readIBCache.seekg(0, ios::end);
+            streamsize vbCacheSize = readVBCache.tellg();
+            streamsize ibCacheSize = readIBCache.tellg();
+            readVBCache.seekg(0, ios::beg);
+            readIBCache.seekg(0, ios::beg);
+            
+            size_t vbCount = vbCacheSize / sizeof(Vertex);
+            size_t ibCount = ibCacheSize / sizeof(u32);
+            model.m_mesh.m_vertices.resize(vbCount);
+            model.m_mesh.m_indices.resize(ibCount);
+
+            char* vbTmp = new char[vbCacheSize];
+            char* ibTmp = new char[ibCacheSize];
+            readVBCache.read(vbTmp, vbCacheSize);
+            readIBCache.read(ibTmp, ibCacheSize);
+            readVBCache.close();
+            readIBCache.close();
+
+            memcpy(model.m_mesh.m_vertices.data(), vbTmp, vbCacheSize);
+            memcpy(model.m_mesh.m_indices.data(), ibTmp, ibCacheSize);
+            delete(vbTmp);
+            delete(ibTmp);
+            cout << "\t << Read cache\n";
+        }
+        else
+        {
+            // no cache found, load fbx
+            FBXScene fbx;
+            fbx.filePath = _fbxPath;
+
+            cout << "\t LoadFBX >> \n";
+            FBXHelper::loadFBX(fbx);
+            cout << "\t << LoadFBX\n";
+
+            unordered_map<Vertex, u32> verticesMap{}; // <Vertex, vertexIndex>
+
+            //for (const FBXMesh& mesh : fbx.meshes)
+            const FBXMesh& mesh = fbx.meshes[0];
             {
-                Vertex vertex{};
-                vertex.pos.x = v.position.x;
-                vertex.pos.y = v.position.y;
-                vertex.pos.z = v.position.z;
+                for (FBXVertex v : mesh.m_vertices)
+                {
+                    Vertex vertex{};
+                    vertex.pos.x = v.position.x;
+                    vertex.pos.y = v.position.y;
+                    vertex.pos.z = v.position.z;
 
-                vertex.normal.x = v.normal.x;
-                vertex.normal.y = v.normal.y;
-                vertex.normal.z = v.normal.z;
+                    vertex.normal.x = v.normal.x;
+                    vertex.normal.y = v.normal.y;
+                    vertex.normal.z = v.normal.z;
 
-                vertex.texCoords.x = v.uv.x;
-                vertex.texCoords.y = v.uv.y;
+                    vertex.texCoords.x = v.uv.x;
+                    vertex.texCoords.y = v.uv.y;
 
-                m_vertices.push_back(vertex);
+                    model.m_mesh.m_vertices.push_back(vertex);
+                }
+                model.m_mesh.m_indices.insert(model.m_mesh.m_indices.end(), mesh.m_indices.begin(), mesh.m_indices.end());
             }
-            m_indices.insert(m_indices.end(), mesh.m_indices.begin(), mesh.m_indices.end());
+
+            // Write caches
+            cout << "\t WriteCache >> \n";
+            ofstream writeVBCache, writeIBCache;
+            
+            writeVBCache.open(vbCachePath.c_str(), ios::binary);
+            writeIBCache.open(ibCachePath.c_str(), ios::binary);
+
+            if (writeVBCache.is_open() && writeIBCache.is_open())
+            {
+                size_t vbSize = sizeof(Vertex) * model.m_mesh.m_vertices.size();
+                size_t ibSize = sizeof(u32) * model.m_mesh.m_indices.size();
+
+                writeVBCache.write((char*)model.m_mesh.m_vertices.data(), vbSize);
+                writeIBCache.write((char*)model.m_mesh.m_indices.data(), ibSize);
+    
+                writeVBCache.close();
+                writeIBCache.close();
+            }
+            cout << "\t << WriteCache \n";
         }
 
-        FBXMaterial material;
-        material.diffuse = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Albedo.jpg";
-        material.normal = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Normal_LOD0.jpg";
-        material.specular = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Specular.jpg";
-        material.glossiness = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Gloss.jpg";
+
+
+        static float instance_offset_HACK = 0.0f;
+        static bool doOffset = false;
+        if(doOffset)
+        {
+            for (Vertex& v : model.m_mesh.m_vertices)
+            {
+                v.pos += glm::vec3(instance_offset_HACK, 0.0f, 0.0f);
+            }
+        }
+        doOffset = true;
+        instance_offset_HACK += 50.0f;
+
+        
+        cout << "\t Load textures >> \n";
+        model.m_material.m_type = Model::Material::MaterialType::TextureBased;
+
+        //string diffuse = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Albedo.jpg";
+        //string normal = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Normal_LOD0.jpg";
+        //string specular = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Specular.jpg";
+        //string glossiness = "Resources/Models/Nature_Rock_Cliff_xgnlfc0_8K_3d_ms/xgnlfc0_8K_Roughness.jpg";
+        string diffuse = "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw_8K_Diffuse.jpg";
+        string normal = "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw_8K_Normal.jpg";
+        string specular = "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw_8K_Metalness.jpg";
+        string glossiness = "Resources/Models/war_hammer_axe/War_Hammer_Axe_uh1pbcufa_Raw_8K_Roughness.jpg";
 
         ImageAttachment diffuseMap = ImageAttachment::colorAttachment();
-        diffuseMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.diffuse, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
-        m_textures.push_back(diffuseMap);
+        diffuseMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, diffuse, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        model.m_material.m_textures.push_back(diffuseMap);
 
         ImageAttachment normalMap = ImageAttachment::colorAttachment();
-        normalMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.normal, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
-        m_textures.push_back(normalMap);
+        normalMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, normal, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        model.m_material.m_textures.push_back(normalMap);
 
         ImageAttachment specularMap = ImageAttachment::colorAttachment();
-        specularMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.specular, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
-        m_textures.push_back(specularMap);
+        specularMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, specular, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        model.m_material.m_textures.push_back(specularMap);
 
         ImageAttachment glossinessMap = ImageAttachment::colorAttachment();
-        glossinessMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, material.glossiness, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
-        m_textures.push_back(glossinessMap);
+        glossinessMap.loadImageFromFile(m_logicalDevice, m_physicalDevice, glossiness, m_msaaSamples, m_graphicsCommandPool, m_graphicsQueue);
+        model.m_material.m_textures.push_back(glossinessMap);
+        cout << "\t << Load textures \n";
 
+
+
+        _models.push_back(model);
         cout << "<< Engine::loadModel\n";
     }
 
@@ -2120,9 +2330,9 @@ namespace Nyte
 
         throw std::runtime_error("No memory type fit the given buffer.");
     }
-    void Engine::createVertexBuffer()
+    void Engine::createVertexBuffer(Model& _model)
     {
-        VkDeviceSize vertexBufferSize = sizeof(Vertex) * m_vertices.size();
+        VkDeviceSize vertexBufferSize = sizeof(Vertex) * _model.m_mesh.m_vertices.size();
 
         // Create a staging buffer
         VkBuffer stagingBuffer;
@@ -2137,7 +2347,7 @@ namespace Nyte
         // Map vertices to the staging buffer
         void* data;
         vkMapMemory(m_logicalDevice, stagingBufferDeviceMemory, 0, vertexBufferSize, 0, &data);
-        memcpy(data, m_vertices.data(), (size_t)vertexBufferSize);
+        memcpy(data, _model.m_mesh.m_vertices.data(), (size_t)vertexBufferSize);
         vkUnmapMemory(m_logicalDevice, stagingBufferDeviceMemory);
 
         // Create the vertex buffer (GPU only)
@@ -2148,18 +2358,23 @@ namespace Nyte
             2,
             &queueIndices[0],
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU only buffer
-            m_vertexBuffer,
-            m_vertexBufferDeviceMemory);
+            _model.m_mesh.m_vertexBuffer,
+            _model.m_mesh.m_vertexBufferDeviceMemory);
 
         // Copy staging to vertex buffer (one shot)
-        copyBuffer(stagingBuffer, m_vertexBuffer, vertexBufferSize);
+        copyBuffer(stagingBuffer, _model.m_mesh.m_vertexBuffer, vertexBufferSize);
 
         vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(m_logicalDevice, stagingBufferDeviceMemory, nullptr);
     }
-    void Engine::createIndexBuffer()
+    void Engine::destroyVertexBuffer(Model& _model)
     {
-        VkDeviceSize indexBufferSize = sizeof(m_indices[0]) * m_indices.size();
+        vkDestroyBuffer(m_logicalDevice, _model.m_mesh.m_vertexBuffer, nullptr);
+        vkFreeMemory(m_logicalDevice, _model.m_mesh.m_vertexBufferDeviceMemory, nullptr);
+    }
+    void Engine::createIndexBuffer(Model& _model)
+    {
+        VkDeviceSize indexBufferSize = sizeof(_model.m_mesh.m_indices[0]) * _model.m_mesh.m_indices.size();
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -2172,7 +2387,7 @@ namespace Nyte
 
         void* data;
         vkMapMemory(m_logicalDevice, stagingBufferMemory, 0, indexBufferSize, 0, &data);
-        memcpy(data, m_indices.data(), (size_t)indexBufferSize);
+        memcpy(data, _model.m_mesh.m_indices.data(), (size_t)indexBufferSize);
         vkUnmapMemory(m_logicalDevice, stagingBufferMemory);
 
         u32 queueIndices[] = { m_queueFamilyIndices.transferFamily.value(), m_queueFamilyIndices.graphicsFamily.value() };
@@ -2182,14 +2397,20 @@ namespace Nyte
             2,
             &queueIndices[0],
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            m_indexBuffer,
-            m_indexBufferDeviceMemory);
+            _model.m_mesh.m_indexBuffer,
+            _model.m_mesh.m_indexBufferDeviceMemory);
 
-        copyBuffer(stagingBuffer, m_indexBuffer, indexBufferSize);
+        copyBuffer(stagingBuffer, _model.m_mesh.m_indexBuffer, indexBufferSize);
 
         vkDestroyBuffer(m_logicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(m_logicalDevice, stagingBufferMemory, nullptr);
     }
+    void Engine::destroyIndexBuffer(Model& _model)
+    {
+        vkDestroyBuffer(m_logicalDevice, _model.m_mesh.m_indexBuffer, nullptr);
+        vkFreeMemory(m_logicalDevice, _model.m_mesh.m_indexBufferDeviceMemory, nullptr);
+    }
+
     void Engine::createUniformBuffers()
     {
         VkDeviceSize mvpBufferSize = sizeof(UBO_ModelViewProj);
@@ -2207,6 +2428,15 @@ namespace Nyte
                 m_uniformBuffersDeviceMemory[i]);
         }
     }
+    void Engine::destroyUniformBuffers()
+    {
+        for (u32 i = 0; i < m_swapchainImages.size(); i++)
+        {
+            vkDestroyBuffer(m_logicalDevice, m_uniformBuffers[i], nullptr);
+            vkFreeMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[i], nullptr);
+        }
+    }
+
     //void Engine::createTextureImage()
     //{
     ////m_texture.path = TEXTURE_PATH;
@@ -2446,9 +2676,12 @@ namespace Nyte
         float time = chrono::duration<float, chrono::seconds::period>(currentTime - startTime).count();
         time *= 0.5f;
 
+        glm::vec3 cameraPos = glm::vec3(60.0f, 100.0f, 60.0f);
+
         UBO_ModelViewProj ubo_MVP{};
         ubo_MVP.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        ubo_MVP.view = glm::lookAt(glm::vec3(15000.0f, 15000.0f, 15000.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        //ubo_MVP.view = glm::lookAt(glm::vec3(15000.0f, 15000.0f, 15000.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        ubo_MVP.view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ubo_MVP.proj = glm::perspective(glm::radians(45.0f), m_swapchainExtent.width / (float)m_swapchainExtent.height, 0.1f, 10000000.0f);
 
         ubo_MVP.proj[1][1] *= -1; // convert OpenGL coords to Vulkan coords
@@ -2457,6 +2690,20 @@ namespace Nyte
         vkMapMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[_currentImage], 0, sizeof(ubo_MVP), 0, &data);
         memcpy(data, &ubo_MVP, sizeof(ubo_MVP));
         vkUnmapMemory(m_logicalDevice, m_uniformBuffersDeviceMemory[_currentImage]);
+
+
+
+        UBO_Deffered ubo_Def{};
+        //ubo_Def.cameraPosition = glm::vec4(cameraPos, 0.0f);
+        //ubo_Def.lightPosition =  glm::vec4(30000.0f, 0.0f, 30000.0f, 0.0f);
+        //ubo_Def.lightDirection =  glm::vec4(0.5f, 0.0f, 0.5f, 0.0f);
+        ubo_Def.cameraPosition = glm::vec4(cameraPos, 0.0f);
+        ubo_Def.lightPosition =  glm::vec4(10000.0f, 0.0f, 10000.0f, 0.0f);
+        ubo_Def.lightDirection =  glm::vec4(0.5f, 0.0f, 0.5f, 0.0f);
+
+        vkMapMemory(m_logicalDevice, m_deferred.m_uniformBuffers.m_uniformBuffersDeviceMemory[_currentImage], 0, sizeof(ubo_Def), 0, &data);
+        memcpy(data, &ubo_Def, sizeof(UBO_Deffered));
+        vkUnmapMemory(m_logicalDevice, m_deferred.m_uniformBuffers.m_uniformBuffersDeviceMemory[_currentImage]);
     }
 
 } // namespace Nyte

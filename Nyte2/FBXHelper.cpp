@@ -1,7 +1,7 @@
 #include "FBXHelper.h"
 #include "FileHelper.h"
 #include <unordered_map>
-
+#include <fstream>
 
 void FBXHelper::loadFBX(FBXScene& _fbx)
 {
@@ -39,6 +39,9 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
         //ofbx::Vec3Attributes tangents = geometryData.getTangents();
         ofbx::Vec2Attributes uv0 = geometryData.getUVs(0);
 
+	// TODO: improve import speed by reworking VB data (multi-buffer, stride)
+        static bool GOTTA_GO_FAST = true; // hack to speed up the importer
+
         FBXMesh fbxMesh;
         int vertexCount = positions.count;
         for (int idx = 0; idx < vertexCount; ++idx)
@@ -49,8 +52,7 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
             //vertex.tangent = tangents.get(idx);
             vertex.uv = uv0.get(idx);
 
-            auto foundIt = std::find(fbxMesh.m_vertices.rbegin(), fbxMesh.m_vertices.rend(), vertex);
-            if (foundIt == fbxMesh.m_vertices.rend())
+            if (GOTTA_GO_FAST)
             {
                 fbxMesh.m_vertices.emplace_back(
                     positions.get(idx),
@@ -63,9 +65,24 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
             }
             else
             {
-                // vertex already registered
-                u32 index = (u32)std::distance(fbxMesh.m_vertices.begin(), foundIt.base()) - 1;
-                fbxMesh.m_indices.push_back(index);
+                auto foundIt = std::find(fbxMesh.m_vertices.rbegin(), fbxMesh.m_vertices.rend(), vertex);
+                if (foundIt == fbxMesh.m_vertices.rend())
+                {
+                    fbxMesh.m_vertices.emplace_back(
+                        positions.get(idx),
+                        normals.get(idx),
+                        //tangents.get(idx),
+                        uv0.get(idx)
+                    );
+                    u32 index = (u32)fbxMesh.m_vertices.size() - 1;
+                    fbxMesh.m_indices.push_back(index);
+                }
+                else
+                {
+                    // vertex already registered
+                    u32 index = (u32)std::distance(fbxMesh.m_vertices.begin(), foundIt.base()) - 1;
+                    fbxMesh.m_indices.push_back(index);
+                }
             }
         }
         
@@ -108,4 +125,15 @@ void FBXHelper::loadFBX(FBXScene& _fbx)
 
         _fbx.meshes.push_back(fbxMesh);
     }
+
+    // Cache result
+    //std::string cachePath = getCachePath(_fbx);
+    //std::ofstream fileStream(cachePath, std::ios::out | std::ios::binary | std::ios::app);
+    //for (FBXMesh& mesh : _fbx.meshes)
+    //{
+    //    fileStream.write(mesh, sizeof FBXMesh);
+    //}
+    //fs.write(surname, sizeof surname);
+    //fs.write(reinterpret_cast<const char*>(&age), sizeof age);
+    //fileStream.close();
 }

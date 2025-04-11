@@ -14,7 +14,7 @@
 #include "Common.h"
 
 
-struct FBXVertex 
+struct FBXVertex
 {
     using Vec3 = ofbx::Vec3;
     using Vec2 = ofbx::Vec2;
@@ -110,5 +110,10 @@ class FBXHelper
 {
 public:
     static void loadFBX(FBXScene& _fbx);
+
+    static std::string getCachePath(FBXScene& _fbx)
+    {
+        return _fbx.filePath + ".cache";
+    }
 };
 
